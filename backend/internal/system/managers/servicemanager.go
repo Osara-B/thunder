@@ -55,6 +55,9 @@ func (sm *ServiceManager) RegisterServices() error {
 	// Register the authorization service.
 	services.NewAuthorizationService(sm.mux)
 
+	// Register the identity provider service.
+	services.NewIdPService(sm.mux)
+
 	// Register the authentication service.
 	services.NewAuthenticationService(sm.mux)
 

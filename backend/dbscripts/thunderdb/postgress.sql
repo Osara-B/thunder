@@ -81,6 +81,19 @@ CREATE TABLE AUTHORIZED_SCOPE (
     PRIMARY KEY (APP_ID, API_ID, SCOPE_ID)
 );
 
+CREATE TABLE IDP (
+    ID INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    IDP_ID VARCHAR(36) UNIQUE NOT NULL,
+    NAME VARCHAR(255) NOT NULL,
+    DESCRIPTION VARCHAR(500),
+    CLIENT_ID VARCHAR(255) NOT NULL,
+    CLIENT_SECRET VARCHAR(255) NOT NULL,
+    REDIRECT_URI VARCHAR(500) NOT NULL,
+    SCOPES VARCHAR(255),
+    CREATED_AT TIMESTAMPTZ DEFAULT NOW(),
+    UPDATED_AT TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- Insert sample data into the tables.
 INSERT INTO SP_APP (APP_NAME, APP_ID, DESCRIPTION) VALUES ('Test SPA', '550e8400-e29b-41d4-a716-446655440000', 'Initial testing App');
 
@@ -118,3 +131,8 @@ INSERT INTO "USER" (USER_ID, ORG_ID, TYPE, ATTRIBUTES)
 VALUES
 ('550e8400-e29b-41d4-a716-446655440000', '456e8400-e29b-41d4-a716-446655440001', 'person',
 '{"age": 30, "roles": ["admin", "user"], "address": {"city": "Colombo", "zip": "00100"}}');
+
+INSERT INTO IDP (IDP_ID, NAME, DESCRIPTION, CLIENT_ID, CLIENT_SECRET, REDIRECT_URI, SCOPES, CREATED_AT, UPDATED_AT)
+VALUES
+('550e8400-e29b-41d4-a716-446655440000', 'Github', 'Login with Github', 'client1', 'secret1', 'https://localhost:8090/flow/authn', '["user:email","read:user"]', datetime('now'), datetime('now')),
+('550e8400-e29b-41d4-a716-446655440001', 'Google', 'Login with Google', 'client2', 'secret2', 'https://localhost:8090/flow/authn', '["user:email","read:user"]', datetime('now'), datetime('now'));
