@@ -1,0 +1,185 @@
+swagger: "2.0"
+basePath: /
+definitions:
+  model.IdentityProvider:
+    properties:
+      id:
+        type: string
+      name:
+        type: string
+      description:
+        type: string
+      client_id:
+        type: string
+      client_secret:
+        type: string
+      redirect_uri:
+        type: string
+      scopes:
+        type: object
+    type: object
+host: localhost:8090
+info:
+  contact: {}
+  description: This API is used to manage identity providers.
+  license:
+    name: Apache 2.0
+    url: http://www.apache.org/licenses/LICENSE-2.0.html
+  title: Identity Provider Management API
+  version: "1.0"
+paths:
+  /identity-providers:
+    get:
+      consumes:
+      - application/json
+      description: Retrieve a list of all identity providers.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/model.IdentityProvider'
+            type: array
+        "400":
+          description: 'Bad Request: The request body is malformed or contains invalid data.'
+          schema:
+            type: string
+        "500":
+          description: 'Internal Server Error: An unexpected error occurred while processing the request.'
+          schema:
+            type: string
+      summary: List identity providers
+      tags:
+      - identity-providers
+    post:
+      consumes:
+      - application/json
+      description: Creates a new identity provider with the provided details.
+      parameters:
+      - description: Identity provider data
+        in: body
+        name: identityProvider
+        required: true
+        schema:
+          $ref: '#/definitions/model.IdentityProvider'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/model.IdentityProvider'
+        "400":
+          description: 'Bad Request: The request body is malformed or contains invalid data.'
+          schema:
+            type: string
+        "500":
+          description: 'Internal Server Error: An unexpected error occurred while processing the request.'
+          schema:
+            type: string
+      summary: Create an identity provider
+      tags:
+      - identity-providers
+  /identity-providers/{id}:
+    get:
+      consumes:
+      - application/json
+      description: Retrieve a specific identity provider using its ID.
+      parameters:
+      - description: Identity provider ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.IdentityProvider'
+        "400":
+          description: 'Bad Request: The request body is malformed or contains invalid data.'
+          schema:
+            type: string
+        "404":
+          description: 'Not Found: The identity provider with the specified ID does not exist.'
+          schema:
+            type: string
+        "500":
+          description: 'Internal Server Error: An unexpected error occurred while processing the request.'
+          schema:
+            type: string
+      summary: Get an identity provider by ID
+      tags:
+      - identity-providers
+    put:
+      consumes:
+      - application/json
+      description: Update the details of an existing identity provider.
+      parameters:
+      - description: Identity provider ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Updated identity provider data
+        in: body
+        name: identityProvider
+        required: true
+        schema:
+          $ref: '#/definitions/model.IdentityProvider'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.IdentityProvider'
+        "400":
+          description: 'Bad Request: The request body is malformed or contains invalid data.'
+          schema:
+            type: string
+        "404":
+          description: 'Not Found: The identity provider with the specified ID does not exist.'
+          schema:
+            type: string
+        "500":
+          description: 'Internal Server Error: An unexpected error occurred while processing the request.'
+          schema:
+            type: string
+      summary: Update an identity provider
+      tags:
+      - identity-providers
+    delete:
+      consumes:
+      - application/json
+      description: Delete an identity provider using its ID.
+      parameters:
+      - description: Identity provider ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: 'Bad Request: The request body is malformed or contains invalid data.'
+          schema:
+            type: string
+        "404":
+          description: 'Not Found: The identity provider with the specified ID does not exist.'
+          schema:
+            type: string
+        "500":
+          description: 'Internal Server Error: An unexpected error occurred while processing the request.'
+          schema:
+            type: string
+      summary: Delete an identity provider
+      tags:
+      - identity-providers
