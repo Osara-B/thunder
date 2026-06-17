@@ -85,8 +85,11 @@ paths:
                 - name: "client_secret"
                   value: "your-client-secret"
                   isSecret: true
-                - name: "scope"
-                  value: "openid email profile"
+                - name: "redirect_uri"
+                  value: "https://myapp.example.com/oauth/callback"
+                  isSecret: false
+                - name: "scopes"
+                  value: "openid,email"
                   isSecret: false
               attributeConfiguration:
                 userTypeResolution:
@@ -117,8 +120,23 @@ paths:
                   - name: "client_secret"
                     value: "******"
                     isSecret: true
-                  - name: "scope"
-                    value: "openid email profile"
+                  - name: "redirect_uri"
+                    value: "https://myapp.example.com/oauth/callback"
+                    isSecret: false
+                  - name: "scopes"
+                    value: "openid,email"
+                    isSecret: false
+                  - name: "token_endpoint"
+                    value: "https://oauth2.googleapis.com/token"
+                    isSecret: false
+                  - name: "jwks_endpoint"
+                    value: "https://www.googleapis.com/oauth2/v3/certs"
+                    isSecret: false
+                  - name: "userinfo_endpoint"
+                    value: "https://openidconnect.googleapis.com/v1/userinfo"
+                    isSecret: false
+                  - name: "authorization_endpoint"
+                    value: "https://accounts.google.com/o/oauth2/v2/auth"
                     isSecret: false
                 attributeConfiguration:
                   userTypeResolution:
@@ -226,8 +244,23 @@ paths:
                   - name: "client_secret"
                     value: "******"
                     isSecret: true
-                  - name: "scope"
-                    value: "openid email profile"
+                  - name: "redirect_uri"
+                    value: "https://myapp.example.com/oauth/callback"
+                    isSecret: false
+                  - name: "scopes"
+                    value: "openid,email"
+                    isSecret: false
+                  - name: "token_endpoint"
+                    value: "https://oauth2.googleapis.com/token"
+                    isSecret: false
+                  - name: "jwks_endpoint"
+                    value: "https://www.googleapis.com/oauth2/v3/certs"
+                    isSecret: false
+                  - name: "userinfo_endpoint"
+                    value: "https://openidconnect.googleapis.com/v1/userinfo"
+                    isSecret: false
+                  - name: "authorization_endpoint"
+                    value: "https://accounts.google.com/o/oauth2/v2/auth"
                     isSecret: false
                 attributeConfiguration:
                   userTypeResolution:
@@ -299,6 +332,9 @@ paths:
                 - name: "client_secret"
                   value: "new-client-secret"
                   isSecret: true
+                - name: "redirect_uri"
+                  value: "https://myapp.example.com/oauth/callback"
+                  isSecret: false
               attributeConfiguration:
                 userTypeResolution:
                   default: "person"
@@ -328,6 +364,24 @@ paths:
                   - name: "client_secret"
                     value: "******"
                     isSecret: true
+                  - name: "redirect_uri"
+                    value: "https://myapp.example.com/oauth/callback"
+                    isSecret: false
+                  - name: "scopes"
+                    value: "openid,email"
+                    isSecret: false
+                  - name: "token_endpoint"
+                    value: "https://oauth2.googleapis.com/token"
+                    isSecret: false
+                  - name: "jwks_endpoint"
+                    value: "https://www.googleapis.com/oauth2/v3/certs"
+                    isSecret: false
+                  - name: "userinfo_endpoint"
+                    value: "https://openidconnect.googleapis.com/v1/userinfo"
+                    isSecret: false
+                  - name: "authorization_endpoint"
+                    value: "https://accounts.google.com/o/oauth2/v2/auth"
+                    isSecret: false
                 attributeConfiguration:
                   userTypeResolution:
                     default: "person"
