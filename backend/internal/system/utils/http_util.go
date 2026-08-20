@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"html"
 	"net/http"
 	"net/url"
 	"path"
@@ -450,7 +449,9 @@ func DecodeJSONResponse[T any](resp *http.Response) (*T, error) {
 	return &data, nil
 }
 
-// SanitizeString trims whitespace, removes control characters, and escapes HTML.
+// SanitizeString trims whitespace and removes control characters (except newline and tab).
+// It does NOT HTML-escape: escaping is an output-context concern and is applied at the
+// rendering sinks, so applying it here would corrupt the stored value.
 func SanitizeString(input string) string {
 	if input == "" {
 		return input
@@ -460,21 +461,16 @@ func SanitizeString(input string) string {
 	trimmed := strings.TrimSpace(input)
 
 	// Remove non-printable/control characters (except newline and tab)
-	cleaned := strings.Map(func(r rune) rune {
+	return strings.Map(func(r rune) rune {
 		if unicode.IsControl(r) && r != '\n' && r != '\t' {
 			return -1
 		}
 		return r
 	}, trimmed)
-
-	// Escape HTML to prevent XSS
-	safe := html.EscapeString(cleaned)
-
-	return safe
 }
 
 // SanitizeStringMap sanitizes a map of strings.
-// This function trim whitespace, removes control characters, and escapes HTML in each map entry.
+// This function trims whitespace and removes control characters in each map entry.
 func SanitizeStringMap(inputs map[string]string) map[string]string {
 	if len(inputs) == 0 {
 		return inputs

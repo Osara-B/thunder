@@ -130,6 +130,51 @@ var (
 			DefaultValue: "A valid organization unit (ouId or ouHandle) is required",
 		},
 	}
+
+	// ErrorConfigurationEmptyClaimName indicates a claim was declared without a name.
+	ErrorConfigurationEmptyClaimName = tidcommon.ServiceError{
+		Type: tidcommon.ClientErrorType,
+		Code: "VCI-2008",
+		Error: tidcommon.I18nMessage{
+			Key:          "error.vci.configuration_empty_claim_name",
+			DefaultValue: "Invalid claim",
+		},
+		ErrorDescription: tidcommon.I18nMessage{
+			Key:          "error.vci.configuration_empty_claim_name_description",
+			DefaultValue: "Claim names must not be empty",
+		},
+	}
+
+	// ErrorConfigurationDuplicateClaim indicates the same claim name was declared more than once.
+	ErrorConfigurationDuplicateClaim = tidcommon.ServiceError{
+		Type: tidcommon.ClientErrorType,
+		Code: "VCI-2009",
+		Error: tidcommon.I18nMessage{
+			Key:          "error.vci.configuration_duplicate_claim",
+			DefaultValue: "Duplicate claim",
+		},
+		ErrorDescription: tidcommon.I18nMessage{
+			Key:          "error.vci.configuration_duplicate_claim_description",
+			DefaultValue: "Claim name '{{param(claim)}}' is declared more than once",
+		},
+	}
+
+	// ErrorConfigurationReservedClaim indicates a claim name collides with a registered SD-JWT
+	// claim. Issuing such a credential would place the name in both the payload and a disclosure,
+	// which a conformant wallet must reject.
+	ErrorConfigurationReservedClaim = tidcommon.ServiceError{
+		Type: tidcommon.ClientErrorType,
+		Code: "VCI-2010",
+		Error: tidcommon.I18nMessage{
+			Key:          "error.vci.configuration_reserved_claim",
+			DefaultValue: "Reserved claim",
+		},
+		ErrorDescription: tidcommon.I18nMessage{
+			Key: "error.vci.configuration_reserved_claim_description",
+			DefaultValue: "Claim name '{{param(claim)}}' is reserved by the SD-JWT VC format and " +
+				"cannot be used as a credential claim",
+		},
+	}
 )
 
 // configurationClientErrorStatus maps a client-facing error to its HTTP status.

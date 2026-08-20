@@ -10,11 +10,18 @@ import (
 
 // UserType represents a user type definition
 type UserType struct {
-	ID                    string                 `json:"id,omitempty"`
-	Name                  string                 `json:"name"`
-	OUID                  string                 `json:"ouId"`
-	AllowSelfRegistration bool                   `json:"allowSelfRegistration,omitempty"`
-	Schema                map[string]interface{} `json:"schema"`
+	ID                    string                    `json:"id,omitempty"`
+	Name                  string                    `json:"name"`
+	OUID                  string                    `json:"ouId"`
+	AllowSelfRegistration bool                      `json:"allowSelfRegistration,omitempty"`
+	SystemAttributes      *UserTypeSystemAttributes `json:"systemAttributes,omitempty"`
+	Schema                map[string]interface{}    `json:"schema"`
+}
+
+// UserTypeSystemAttributes carries the system-level settings of a user type, such as the
+// attribute used to render a human-readable display name.
+type UserTypeSystemAttributes struct {
+	Display string `json:"display,omitempty"`
 }
 
 // User represents a user in the system
@@ -43,8 +50,11 @@ type Application struct {
 	AllowedUserTypes          []string                 `json:"allowedUserTypes,omitempty"`
 	SubjectAttribute          map[string]string        `json:"subjectAttribute,omitempty"`
 	Certificate               map[string]interface{}   `json:"certificate,omitempty"`
+	PasskeyAllowedOrigins     []string                 `json:"passkeyAllowedOrigins,omitempty"`
 	InboundAuthConfig         []map[string]interface{} `json:"inboundAuthConfig,omitempty"`
 	AssertionConfig           map[string]interface{}   `json:"assertion,omitempty"`
+	// LoginConsent is the login consent configuration (e.g. validityPeriod in seconds).
+	LoginConsent map[string]interface{} `json:"loginConsent,omitempty"`
 	// Attestation is the client-level platform attestation config, set at the top level of the
 	// application independent of any OAuth profile.
 	Attestation map[string]interface{} `json:"attestation,omitempty"`

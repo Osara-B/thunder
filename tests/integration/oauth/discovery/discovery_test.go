@@ -41,6 +41,7 @@ type OAuth2AuthorizationServerMetadata struct {
 	ResponseTypesSupported                     []string `json:"response_types_supported"`
 	GrantTypesSupported                        []string `json:"grant_types_supported"`
 	TokenEndpointAuthMethodsSupported          []string `json:"token_endpoint_auth_methods_supported"`
+	TokenEndpointAuthSigningAlgValuesSupported []string `json:"token_endpoint_auth_signing_alg_values_supported"`
 	CodeChallengeMethodsSupported              []string `json:"code_challenge_methods_supported,omitempty"`
 	AuthorizationResponseIssParameterSupported bool     `json:"authorization_response_iss_parameter_supported"`
 }
@@ -133,6 +134,13 @@ func (ts *DiscoveryTestSuite) TestOAuth2AuthorizationServerMetadata_GET_Success(
 	ts.Contains(metadata.TokenEndpointAuthMethodsSupported, "client_secret_basic", "Should support client_secret_basic")
 	ts.Contains(metadata.TokenEndpointAuthMethodsSupported, "client_secret_post", "Should support client_secret_post")
 	ts.Contains(metadata.TokenEndpointAuthMethodsSupported, "none", "Should support none")
+
+	// Verify token endpoint auth signing algs are advertised with FAPI 2.0 permitted algorithms (RFC 8414)
+	ts.NotEmpty(metadata.TokenEndpointAuthSigningAlgValuesSupported,
+		"token_endpoint_auth_signing_alg_values_supported should be present (FAPI 2.0)")
+	ts.Contains(metadata.TokenEndpointAuthSigningAlgValuesSupported, "PS256", "Should advertise PS256")
+	ts.Contains(metadata.TokenEndpointAuthSigningAlgValuesSupported, "ES256", "Should advertise ES256")
+	ts.Contains(metadata.TokenEndpointAuthSigningAlgValuesSupported, "EdDSA", "Should advertise EdDSA")
 
 	// Verify only S256 code challenge method is supported (plain is prohibited per OAuth 2.0 Security BCP)
 	ts.Equal([]string{"S256"}, metadata.CodeChallengeMethodsSupported,

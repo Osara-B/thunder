@@ -8,12 +8,18 @@ inputs:
     description: 'Whether to enable coverage collection'
     required: false
     default: false
+  ref:
+    description: 'Branch, tag or SHA to check out the test sources from. Defaults to the ref that triggered the workflow.'
+    required: false
+    default: ''
 
 runs:
   using: "composite"
   steps:
     - name: 📥 Checkout Code
       uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      with:
+        ref: ${{ inputs.ref }}
 
     - name: ⚙️ Set up Go Environment
       uses: ./.github/actions/setup-go

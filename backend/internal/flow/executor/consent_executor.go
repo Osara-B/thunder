@@ -6,7 +6,6 @@ package executor
 import (
 	"encoding/json"
 	"errors"
-	"html"
 	"slices"
 	"strconv"
 	"strings"
@@ -63,6 +62,7 @@ func newConsentExecutor(
 		defaultInputs, prerequisites, &providers.ExecutorMeta{
 			SupportedProperties: []providers.ExecutorSupportedProperties{
 				{Property: "timeout"},
+				{Property: propertyKeyConsentFailOnDeny},
 			},
 		})
 
@@ -212,11 +212,6 @@ func (e *consentExecutor) handleConsentDecisions(ctx *providers.NodeContext, exe
 		return execResp, nil
 	}
 
-	// SanitizeStringMap HTML-escapes all user inputs as an XSS prevention measure.
-	// For the consent_decisions field the value is a JSON string, so HTML entities
-	// must be unescaped before parsing
-	decisionsJSON = html.UnescapeString(decisionsJSON)
-
 	var decisions providers.ConsentDecisions
 	if err := json.Unmarshal([]byte(decisionsJSON), &decisions); err != nil {
 		logger.Error(ctx.Context, "Failed to parse consent decisions", log.Error(err))
@@ -225,10 +220,19 @@ func (e *consentExecutor) handleConsentDecisions(ctx *providers.NodeContext, exe
 		return execResp, nil
 	}
 
+	failOnDeny, _ := ctx.NodeProperties[propertyKeyConsentFailOnDeny].(bool)
+
 	// A timed out prompt is not a user decision, so nothing is recorded and nothing is consented.
 	// The expiry check below is skipped because such a submission is expected to arrive late.
 	if decisions.Reason == providers.ConsentDecisionReasonTimeout {
-		logger.Debug(ctx.Context, "Consent prompt timed out; completing without recording consent")
+		if failOnDeny {
+			logger.Debug(ctx.Context, "Consent prompt timed out and failOnDeny is enabled. Failing the flow")
+			execResp.Status = providers.ExecFailure
+			execResp.Error = &ErrConsentPromptTimedOut
+			return execResp, nil
+		}
+
+		logger.Debug(ctx.Context, "Consent prompt timed out. Completing without recording consent")
 		execResp.RuntimeData[common.RuntimeKeyConsentedAttributes] = ""
 		execResp.RuntimeData[common.RuntimeKeyConsentedPermissions] = ""
 		execResp.Status = providers.ExecComplete
@@ -279,6 +283,16 @@ func (e *consentExecutor) handleConsentDecisions(ctx *providers.NodeContext, exe
 
 		logger.Error(ctx.Context, "Failed to record consent", log.Any("error", svcErr))
 		return nil, errors.New("failed to record consent")
+	}
+
+	// Fail the flow when the node opts into strict denial handling and the user did not approve
+	// the prompt. This is verified with the IsApproved flag on the consent decisions struct.
+	if failOnDeny && !decisions.Approved {
+		logger.Debug(ctx.Context, "User denied consent and failOnDeny is enabled",
+			log.String("consentID", consentRecord.ID))
+		execResp.Status = providers.ExecFailure
+		execResp.Error = &ErrConsentDenied
+		return execResp, nil
 	}
 
 	// Store the consent ID in RuntimeData for downstream usage

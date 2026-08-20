@@ -1420,7 +1420,7 @@ const translations = {
       'Deleting this organization unit is permanent and cannot be undone.',
     'edit.general.ou.id.label': 'Organization Unit ID',
     'edit.general.ou.parent.label': 'Parent Organization Unit',
-    'edit.general.ou.noParent.label': 'Root Organization Unit',
+    'edit.general.ou.noParent.label': 'This is a root organization unit.',
     'edit.general.dangerZone.delete.button.label': 'Delete Organization Unit',
     // Form fields
     'edit.general.handle.label': 'Handle',
@@ -3591,6 +3591,9 @@ const translations = {
     'core.executions.consent.timeout.label': 'Consent Timeout (seconds)',
     'core.executions.consent.timeout.placeholder': '0',
     'core.executions.consent.timeout.hint': 'Time in seconds before the consent request expires. Use 0 for no timeout.',
+    'core.executions.consent.failOnDeny.label': 'Fail flow when user denies consent',
+    'core.executions.consent.failOnDeny.hint':
+      'When enabled, the flow fails if the user denies the consent prompt or lets it time out, even if all requested attributes and permissions are optional.',
 
     // Identifying executor modes
     'core.executions.identifying.mode.identify': 'Identify',
@@ -5006,6 +5009,7 @@ const translations = {
     'claims.name': 'Claim',
     'claims.nameHint':
       'The claim path to request from the wallet, and whether it must be disclosed (Mandatory) or may be withheld (Optional).',
+    'claims.errors.duplicate': 'This claim is already requested. Each claim can be listed only once.',
     'claims.requirement': 'Requirement',
     'claims.mandatory': 'Mandatory',
     'claims.optional': 'Optional',
@@ -5140,6 +5144,8 @@ const translations = {
     'claims.name': 'Attribute Name',
     'claims.displayName': 'Display Name',
     'claims.nameHint': 'Must match a user profile attribute name; the value is sourced from the user.',
+    'claims.errors.duplicate': 'This attribute is already added. Each attribute can be listed only once.',
+    'claims.errors.reserved': 'This name is reserved by the credential format and cannot be used as an attribute.',
 
     // Offer dialog
     'offer.title': 'Credential Offer',

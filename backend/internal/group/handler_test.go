@@ -592,14 +592,14 @@ func (suite *GroupHandlerTestSuite) TestGroupHandler_HandleGroupPostRequest() {
 			setup: func(serviceMock *GroupServiceInterfaceMock) {
 				serviceMock.
 					On("CreateGroup", mock.Anything, mock.MatchedBy(func(request CreateGroupRequest) bool {
-						return request.Name == "Team &lt;script&gt;" &&
+						return request.Name == "Team <script>" &&
 							request.Description == "desc" &&
 							request.OUID == testOUID &&
 							len(request.Members) == 1 &&
 							request.Members[0].ID == "member-1" &&
 							request.Members[0].Type == MemberTypeUser
 					})).
-					Return(&Group{ID: "grp-001", Name: "Team &lt;script&gt;",
+					Return(&Group{ID: "grp-001", Name: "Team <script>",
 						OUID: testOUID}, nil).
 					Once()
 			},
@@ -610,7 +610,7 @@ func (suite *GroupHandlerTestSuite) TestGroupHandler_HandleGroupPostRequest() {
 				var body Group
 				require.NoError(suite.T(), json.Unmarshal(rr.Body.Bytes(), &body))
 				require.Equal(suite.T(), "grp-001", body.ID)
-				require.Equal(suite.T(), "Team &lt;script&gt;", body.Name)
+				require.Equal(suite.T(), "Team <script>", body.Name)
 			},
 		},
 		{
@@ -981,7 +981,7 @@ func (suite *GroupHandlerTestSuite) TestGroupHandler_HandleGroupPutRequest() {
 			setup: func(serviceMock *GroupServiceInterfaceMock) {
 				serviceMock.
 					On("UpdateGroup", mock.Anything, "grp-001", mock.MatchedBy(func(request UpdateGroupRequest) bool {
-						return request.Name == "team &lt;script&gt;" &&
+						return request.Name == "team <script>" &&
 							request.Description == "desc" &&
 							request.OUID == testOUID
 					})).

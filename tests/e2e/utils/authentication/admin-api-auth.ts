@@ -1,6 +1,8 @@
 // Copyright 2026 The ThunderID Authors
 // SPDX-License-Identifier: Apache-2.0
 
+import type { APIRequestContext } from "@playwright/test";
+
 // Application ID of the native app used for E2E admin authentication.
 // Declared in tests/e2e/thunderid-config.yaml with a fixed UUID. Uses only the
 // client_credentials grant type, so it is not subject to the redirect-based flow
@@ -14,7 +16,7 @@ const E2E_ADMIN_NATIVE_FLOW_SECRET = "e2e-admin-native-app-secret";
  * Obtain a short-lived admin bearer token via the flow execution API.
  * Reads SERVER_URL, ADMIN_USERNAME, and ADMIN_PASSWORD from environment variables.
  */
-export async function getAdminToken(request: import("@playwright/test").APIRequestContext): Promise<string> {
+export async function getAdminToken(request: APIRequestContext): Promise<string> {
   const serverUrl = process.env.SERVER_URL || "https://localhost:8090";
   const adminUsername = process.env.ADMIN_USERNAME || "admin";
   const adminPassword = process.env.ADMIN_PASSWORD || "admin";

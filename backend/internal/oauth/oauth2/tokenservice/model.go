@@ -112,6 +112,7 @@ type IDTokenBuildContext struct {
 // RefreshTokenClaims represents the validated claims from a refresh token.
 type RefreshTokenClaims struct {
 	Sub              string
+	ClientID         string
 	Audiences        []string
 	GrantType        string
 	Scopes           []string
@@ -130,6 +131,7 @@ type RefreshTokenClaims struct {
 	// tokens minted during rotation so the family stays intact, and used to revoke the whole family on
 	// reuse. Empty for pre-rollout tokens.
 	TokenFamilyID string
+	Claims        map[string]interface{}
 }
 
 // SubjectTokenClaims represents the validated claims from a subject token (for token exchange).

@@ -74,6 +74,7 @@ import RepoLink from '@site/src/components/RepoLink';
 import RunThunderID from '@site/src/components/RunThunderID';
 import SampleDownload from '@site/src/components/SampleDownload';
 import SDKCard from '@site/src/components/SDKCard';
+import SdkQuickstartDownload from '@site/src/components/SdkQuickstartDownload';
 import {SolutionArchitectureDiagram} from '@site/src/components/SolutionArchitectureDiagram';
 import Stepper from '@site/src/components/Stepper';
 import TutorialHero, {TutorialHeroItem} from '@site/src/components/TutorialHero';
@@ -172,6 +173,7 @@ export default {
   DeveloperShortcut,
   GettingStartedJourney,
   SampleDownload,
+  SdkQuickstartDownload,
   SolutionArchitectureDiagram,
   UseCaseBranchCards,
   UseCaseStepper,

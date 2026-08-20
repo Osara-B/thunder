@@ -12,6 +12,7 @@ import (
 	"github.com/thunder-id/thunderid/internal/attributecache"
 	"github.com/thunder-id/thunderid/internal/oauth/oauth2/ciba"
 	"github.com/thunder-id/thunderid/internal/oauth/oauth2/constants"
+	"github.com/thunder-id/thunderid/internal/oauth/oauth2/dpop"
 	"github.com/thunder-id/thunderid/internal/oauth/oauth2/model"
 	"github.com/thunder-id/thunderid/internal/oauth/oauth2/resourceindicators"
 	"github.com/thunder-id/thunderid/internal/oauth/oauth2/tokenservice"
@@ -220,7 +221,7 @@ func (h *cibaGrantHandler) issueTokens(ctx context.Context, record *ciba.CIBAAut
 	}
 
 	userSubConfig := oauthApp.UserAccessTokenConfig()
-	accessToken, err := h.tokenBuilder.BuildAccessToken(ctx, &tokenservice.AccessTokenBuildContext{
+	accessTokenCtx := &tokenservice.AccessTokenBuildContext{
 		Subject:           record.UserID,
 		Audiences:         accessTokenAudiences,
 		ClientID:          oauthApp.ClientID,
@@ -230,7 +231,12 @@ func (h *cibaGrantHandler) issueTokens(ctx context.Context, record *ciba.CIBAAut
 		GrantType:         string(providers.GrantTypeCIBA),
 		OAuthApp:          oauthApp,
 		ValidityPeriod:    userSubConfig.ValidityPeriodOrZero(),
-	})
+		DPoPJkt:           dpop.GetJkt(ctx),
+	}
+	if oauthApp.ShouldAppendActorClaim() {
+		accessTokenCtx.ActorClaims = &tokenservice.SubjectTokenClaims{Sub: oauthApp.ID}
+	}
+	accessToken, err := h.tokenBuilder.BuildAccessToken(ctx, accessTokenCtx)
 	if err != nil {
 		h.logger.Error(ctx, "Failed to generate access token", log.Error(err))
 		return nil, &model.ErrorResponse{

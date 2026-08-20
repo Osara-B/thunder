@@ -848,6 +848,43 @@ jobs:
       #     name: Backend-combined Coverage (${{ matrix.database }})
       #     fail_ci_if_error: false
 
+  backend-integration-patch-coverage:
+    name: 🛡️ Backend Integration Patch Coverage
+    # Measures only what the integration suite executed. The combined
+    # 🛡️ Patch Coverage Gate pools backend unit, backend integration, and both
+    # frontend reports into one percentage, so a changed backend line covered
+    # only by a unit test satisfies it. This job loads the three
+    # integration-coverage-* artifacts and nothing else, which is the whole
+    # reason it exists separately rather than as another threshold on that gate.
+    #
+    # Gated like the other checks: it needs only build and test-integration, so
+    # unlike the combined gate it does not wait on the frontend or unit jobs, and
+    # it is skipped when those two did not succeed rather than reporting on data
+    # it does not have.
+    needs: [build, test-integration]
+    if: ${{ always() && (github.event_name == 'pull_request' || github.event_name == 'merge_group') && needs.build.result == 'success' && needs.test-integration.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: 📥 Checkout Code
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          # The base-to-head diff needs full history; a shallow clone makes the
+          # merge base unreachable and every changed line look new.
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: 🛡️ Measure Backend Integration Patch Coverage
+        uses: ./.github/actions/backend-integration-patch-coverage
+        with:
+          base-ref: ${{ github.event_name == 'merge_group' && github.event.merge_group.base_sha || format('origin/{0}', github.base_ref) }}
+          # A merge_group payload carries no pull request labels, so queue runs
+          # apply no tag group. Thresholds still come from the base packages map,
+          # and only then the global default.
+          pr-labels: ${{ github.event_name == 'pull_request' && toJSON(github.event.pull_request.labels.*.name) || '' }}
+
   test-integration-status:
     name: ✅ Integration Tests Status
     needs: [test-integration]
@@ -959,6 +996,17 @@ jobs:
 
       - name: 🚀 Start the Server
         run: |
+          # Redirect the backend's Google and GitHub endpoints to the mock servers the social login
+          # specs start, mirroring what run-e2e.sh does locally. Else the specs would use the real
+          # accounts.google.com/github.com.
+          cat >> tests/e2e/server/deployment.yaml <<EOF
+
+          identity_provider:
+            google_base_url: "$DEFAULT_MOCK_GOOGLE_BASE_URL"
+            github_base_url: "$DEFAULT_MOCK_GITHUB_BASE_URL"
+          EOF
+          echo "✅ Pointed identity provider endpoints at the mock servers"
+
           cd tests/e2e/server
           ./setup.sh
           # In container jobs, GitHub Actions reaps a step's descendant processes when the step's
@@ -1156,7 +1204,7 @@ jobs:
 
       # Pull requests run the Chromium project only, and the merge queue runs all
       # three browsers, so nothing reaches main without the full matrix. On a pull
-      # request that is 68 of the 174 tests.
+      # request that is 74 of the 187 tests.
 
       # The Wayfinder specs (tagged @wayfinder) import a config bundle that replaces the
       # server-wide CORS allowlist and default resource server (full-replace import semantics),
@@ -1192,6 +1240,11 @@ jobs:
           SERVER_URL: ${{ env.DEFAULT_SERVER_URL }}
           AUTO_SETUP_MFA: ${{ vars.AUTO_SETUP_MFA || env.DEFAULT_AUTO_SETUP_MFA }}
           MOCK_SMS_SERVER_PORT: ${{ vars.MOCK_SMS_SERVER_PORT || env.DEFAULT_MOCK_SMS_SERVER_PORT }}
+          # Social Login Test Configuration. The specs bind their mock servers to these URLs and
+          # skip entirely when unset, so they must match what "Start the Server" wrote into
+          # deployment.yaml as identity_provider.
+          MOCK_GOOGLE_BASE_URL: ${{ env.DEFAULT_MOCK_GOOGLE_BASE_URL }}
+          MOCK_GITHUB_BASE_URL: ${{ env.DEFAULT_MOCK_GITHUB_BASE_URL }}
           SAMPLE_APP_USERNAME: ${{ secrets.SAMPLE_APP_USERNAME || vars.SAMPLE_APP_USERNAME || env.DEFAULT_SAMPLE_APP_USERNAME }}
           SAMPLE_APP_PASSWORD: ${{ secrets.SAMPLE_APP_PASSWORD || env.DEFAULT_SAMPLE_APP_PASSWORD }}
 
@@ -1295,12 +1348,47 @@ jobs:
             exit 1
           fi
 
+      - name: 🗂️ Cache Wayfinder Mock SMTP Server Dependencies
+        if: ${{ !cancelled() }}
+        id: cache-wayfinder-smtp
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4
+        with:
+          path: samples/apps/wayfinder-sample/smtp-server/node_modules
+          key: wayfinder-smtp-server-${{ runner.os }}-${{ hashFiles('samples/apps/wayfinder-sample/smtp-server/package.json') }}
+
+      - name: 🚀 Start Wayfinder Mock SMTP Server
+        if: ${{ !cancelled() }}
+        run: |
+          cd samples/apps/wayfinder-sample/smtp-server
+          if [ "${{ steps.cache-wayfinder-smtp.outputs.cache-hit }}" != "true" ]; then
+            npm install
+          fi
+          npm run build
+          setsid node src/index.js > "$GITHUB_WORKSPACE/wayfinder-smtp-server.log" 2>&1 < /dev/null &
+          disown $! 2>/dev/null || true
+          # Defaults (127.0.0.1:2525 SMTP, 127.0.0.1:8788 inbox) match the server distribution's
+          # deployment.yaml email.smtp settings exactly, so no .env or config changes are needed.
+          echo "Waiting for Wayfinder mock SMTP inbox on http://localhost:8788..."
+          for i in {1..60}; do
+            if curl -s http://localhost:8788/health > /dev/null; then
+              echo "Wayfinder mock SMTP inbox is up!"
+              break
+            fi
+            sleep 2
+          done
+          if ! curl -s http://localhost:8788/health > /dev/null; then
+            echo "❌ Wayfinder mock SMTP inbox failed to start within 2 minutes"
+            echo "--- wayfinder-smtp-server.log ---"
+            cat "$GITHUB_WORKSPACE/wayfinder-smtp-server.log" || true
+            exit 1
+          fi
+
       - name: 🎭 Run Playwright E2E Tests (Wayfinder)
         if: ${{ !cancelled() }}
         run: |
           if [ -n "$PLAYWRIGHT_PROJECT_FILTER" ]; then
             echo "Running Playwright projects matching '$PLAYWRIGHT_PROJECT_FILTER'"
-            pnpm test --project="$PLAYWRIGHT_PROJECT_FILTER" --output=test-results-wayfinder --grep @wayfinder --pass-with-no-tests
+            pnpm test --project $PLAYWRIGHT_PROJECT_FILTER --output=test-results-wayfinder --grep @wayfinder --pass-with-no-tests
           else
             echo "Running every Playwright project"
             pnpm test --output=test-results-wayfinder --grep @wayfinder --pass-with-no-tests
@@ -1308,9 +1396,11 @@ jobs:
         working-directory: tests/e2e
         env:
           # wayfinder-sample-setup.spec.ts and tests/wayfinder/** run through their own dedicated
-          # projects (see playwright.config.ts), not the plain chromium/firefox/webkit ones - a
-          # bare 'chromium' filter would match neither and silently run zero Wayfinder tests.
-          PLAYWRIGHT_PROJECT_FILTER: ${{ github.event_name == 'pull_request' && 'wayfinder-*' || '' }}
+          # projects (see playwright.config.ts), not the plain chromium/firefox/webkit ones, so PRs
+          # name the Wayfinder projects explicitly (chromium's tryout project plus the two
+          # browser-agnostic ones) instead of a 'chromium' or '*wayfinder-*' filter - the former
+          # would match none of them, the latter would also pull in firefox/webkit tryout runs.
+          PLAYWRIGHT_PROJECT_FILTER: ${{ github.event_name == 'pull_request' && 'wayfinder-setup chromium-wayfinder-tryout wayfinder-mock-email' || '' }}
           PLAYWRIGHT_HTML_OUTPUT_DIR: playwright-report-wayfinder
           PLAYWRIGHT_JSON_OUTPUT_FILE: test-results-wayfinder/test-results.json
           PLAYWRIGHT_JUNIT_OUTPUT_FILE: test-results-wayfinder/junit.xml

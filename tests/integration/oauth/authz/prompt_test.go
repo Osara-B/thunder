@@ -70,3 +70,61 @@ func (ts *AuthzTestSuite) TestAuthorize_PromptUnsupportedValue_InvalidRequest() 
 
 	ts.Assert().Equal("invalid_request", query.Get("error"))
 }
+
+// TestAuthorize_PromptSelectAccount_AccountSelectionRequired verifies that prompt=select_account is
+// redirected back to the client with error=account_selection_required, since the server does not
+// support account selection prompts.
+func (ts *AuthzTestSuite) TestAuthorize_PromptSelectAccount_AccountSelectionRequired() {
+	resp, err := testutils.InitiateAuthorizationFlowWithPrompt(
+		clientID, redirectURI, "code", "openid", "prompt-select-account-state", "select_account")
+	ts.Require().NoError(err)
+	defer resp.Body.Close()
+	ts.Require().Equal(http.StatusFound, resp.StatusCode, "prompt=select_account should redirect back to the client")
+
+	location := resp.Header.Get("Location")
+	ts.Require().NotEmpty(location, "Location header should be present")
+
+	redirected, err := url.Parse(location)
+	ts.Require().NoError(err)
+	query := redirected.Query()
+
+	ts.Assert().Equal("account_selection_required", query.Get("error"))
+	ts.Assert().NotEmpty(query.Get("error_description"))
+	ts.Assert().Equal("prompt-select-account-state", query.Get("state"), "state must be echoed back to the client")
+}
+
+// TestAuthorize_PromptEmpty_InvalidRequest verifies that a prompt parameter present but blank
+// (prompt=, as opposed to the parameter being entirely absent) is rejected as invalid_request. The
+// shared authorization-flow helper treats an empty string as "omit this parameter", so this test
+// builds the raw request directly to represent the parameter being present with an empty value.
+func (ts *AuthzTestSuite) TestAuthorize_PromptEmpty_InvalidRequest() {
+	authorizeURL, err := url.Parse(testutils.TestServerURL + "/oauth2/authorize")
+	ts.Require().NoError(err)
+
+	query := url.Values{}
+	query.Set("client_id", clientID)
+	query.Set("redirect_uri", redirectURI)
+	query.Set("response_type", "code")
+	query.Set("scope", "openid")
+	query.Set("state", "prompt-empty-state")
+	query.Set("prompt", "")
+	authorizeURL.RawQuery = query.Encode()
+
+	req, err := http.NewRequest(http.MethodGet, authorizeURL.String(), nil)
+	ts.Require().NoError(err)
+
+	resp, err := testutils.GetNoRedirectHTTPClient().Do(req)
+	ts.Require().NoError(err)
+	defer resp.Body.Close()
+	ts.Require().Equal(http.StatusFound, resp.StatusCode, "blank prompt should redirect back to the client")
+
+	location := resp.Header.Get("Location")
+	ts.Require().NotEmpty(location, "Location header should be present")
+
+	redirected, err := url.Parse(location)
+	ts.Require().NoError(err)
+	redirectQuery := redirected.Query()
+
+	ts.Assert().Equal("invalid_request", redirectQuery.Get("error"))
+	ts.Assert().NotEmpty(redirectQuery.Get("error_description"))
+}

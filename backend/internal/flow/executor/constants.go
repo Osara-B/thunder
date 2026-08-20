@@ -112,6 +112,11 @@ const (
 	// confirm the logout with the End-User (via the node's onIncomplete prompt) whenever the RP-initiated
 	// logout was not accompanied by a valid id_token_hint (RuntimeKeyLogoutPromptRequired).
 	propertyKeyPromptOnSignOut = "promptOnSignOut"
+	// propertyKeyConsentFailOnDeny, when set to boolean true on a consent node, makes the executor
+	// fail the flow if the user did not approve the consent prompt, either by pressing
+	// the Deny button or by letting the prompt time out. This applies even when every prompted
+	// element is optional.
+	propertyKeyConsentFailOnDeny = "failOnDeny"
 )
 
 // nonSearchableInputs contains the list of user inputs/ attributes that are non-searchable.

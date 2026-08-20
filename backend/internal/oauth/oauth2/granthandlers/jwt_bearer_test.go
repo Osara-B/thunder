@@ -144,7 +144,7 @@ func (suite *JWTBearerGrantHandlerTestSuite) TestHandleGrant_Success() {
 		Assertion: testAssertion,
 	}
 
-	suite.mockTokenValidator.On("ValidateIDJAGAssertion", mock.Anything, testAssertion, testClientID).
+	suite.mockTokenValidator.On("ValidateIDJAGAssertion", mock.Anything, testAssertion).
 		Return(&tokenservice.IDJAGAssertionClaims{
 			Sub:    testUserID,
 			Iss:    testCustomIssuer,
@@ -190,7 +190,7 @@ func (suite *JWTBearerGrantHandlerTestSuite) TestHandleGrant_DPoPProof_Propagate
 		Assertion: testAssertion,
 	}
 
-	suite.mockTokenValidator.On("ValidateIDJAGAssertion", mock.Anything, testAssertion, testClientID).
+	suite.mockTokenValidator.On("ValidateIDJAGAssertion", mock.Anything, testAssertion).
 		Return(&tokenservice.IDJAGAssertionClaims{
 			Sub:    testUserID,
 			Iss:    testCustomIssuer,
@@ -226,7 +226,7 @@ func (suite *JWTBearerGrantHandlerTestSuite) TestHandleGrant_InvalidAssertion() 
 		Assertion: testAssertion,
 	}
 
-	suite.mockTokenValidator.On("ValidateIDJAGAssertion", mock.Anything, testAssertion, testClientID).
+	suite.mockTokenValidator.On("ValidateIDJAGAssertion", mock.Anything, testAssertion).
 		Return(nil, errors.New("assertion audience does not match server issuer"))
 
 	result, errResp := suite.handler.HandleGrant(context.Background(), tokenRequest, suite.oauthApp)
@@ -276,7 +276,7 @@ func (suite *JWTBearerGrantHandlerTestSuite) TestHandleGrant_AssertionRejectionR
 				ClientID:  testClientID,
 				Assertion: testAssertion,
 			}
-			suite.mockTokenValidator.On("ValidateIDJAGAssertion", mock.Anything, testAssertion, testClientID).
+			suite.mockTokenValidator.On("ValidateIDJAGAssertion", mock.Anything, testAssertion).
 				Return(nil, tc.validationErr)
 
 			result, errResp := suite.handler.HandleGrant(context.Background(), tokenRequest, suite.oauthApp)
@@ -302,7 +302,7 @@ func (suite *JWTBearerGrantHandlerTestSuite) TestHandleGrant_ScopeIntersection()
 
 	// Assertion carries [read write], request narrows to [read admin]. Only "read" survives the
 	// intersection; "write" was not requested, "admin" was not asserted.
-	suite.mockTokenValidator.On("ValidateIDJAGAssertion", mock.Anything, testAssertion, testClientID).
+	suite.mockTokenValidator.On("ValidateIDJAGAssertion", mock.Anything, testAssertion).
 		Return(&tokenservice.IDJAGAssertionClaims{
 			Sub:    testUserID,
 			Iss:    testCustomIssuer,
@@ -342,7 +342,7 @@ func (suite *JWTBearerGrantHandlerTestSuite) TestHandleGrant_EmptyAppScopes_Asse
 		Assertion: testAssertion,
 	}
 
-	suite.mockTokenValidator.On("ValidateIDJAGAssertion", mock.Anything, testAssertion, testClientID).
+	suite.mockTokenValidator.On("ValidateIDJAGAssertion", mock.Anything, testAssertion).
 		Return(&tokenservice.IDJAGAssertionClaims{
 			Sub:    testUserID,
 			Iss:    testCustomIssuer,
@@ -381,7 +381,7 @@ func (suite *JWTBearerGrantHandlerTestSuite) TestHandleGrant_AssertionResource_A
 		Assertion: testAssertion,
 	}
 
-	suite.mockTokenValidator.On("ValidateIDJAGAssertion", mock.Anything, testAssertion, testClientID).
+	suite.mockTokenValidator.On("ValidateIDJAGAssertion", mock.Anything, testAssertion).
 		Return(&tokenservice.IDJAGAssertionClaims{
 			Sub:       testUserID,
 			Iss:       testCustomIssuer,
@@ -433,7 +433,7 @@ func (suite *JWTBearerGrantHandlerTestSuite) TestHandleGrant_AssertionNoResource
 		Assertion: testAssertion,
 	}
 
-	suite.mockTokenValidator.On("ValidateIDJAGAssertion", mock.Anything, testAssertion, testClientID).
+	suite.mockTokenValidator.On("ValidateIDJAGAssertion", mock.Anything, testAssertion).
 		Return(&tokenservice.IDJAGAssertionClaims{
 			Sub:    testUserID,
 			Iss:    testCustomIssuer,
@@ -459,7 +459,7 @@ func (suite *JWTBearerGrantHandlerTestSuite) TestHandleGrant_RequestResourceNarr
 		Resources: []string{testRS01URI},
 	}
 
-	suite.mockTokenValidator.On("ValidateIDJAGAssertion", mock.Anything, testAssertion, testClientID).
+	suite.mockTokenValidator.On("ValidateIDJAGAssertion", mock.Anything, testAssertion).
 		Return(&tokenservice.IDJAGAssertionClaims{
 			Sub:       testUserID,
 			Iss:       testCustomIssuer,
@@ -499,7 +499,7 @@ func (suite *JWTBearerGrantHandlerTestSuite) TestHandleGrant_RequestResourceNotI
 		Resources: []string{"https://not-granted.example.com"},
 	}
 
-	suite.mockTokenValidator.On("ValidateIDJAGAssertion", mock.Anything, testAssertion, testClientID).
+	suite.mockTokenValidator.On("ValidateIDJAGAssertion", mock.Anything, testAssertion).
 		Return(&tokenservice.IDJAGAssertionClaims{
 			Sub:       testUserID,
 			Iss:       testCustomIssuer,
@@ -521,7 +521,7 @@ func (suite *JWTBearerGrantHandlerTestSuite) TestHandleGrant_TokenBuildError() {
 		Assertion: testAssertion,
 	}
 
-	suite.mockTokenValidator.On("ValidateIDJAGAssertion", mock.Anything, testAssertion, testClientID).
+	suite.mockTokenValidator.On("ValidateIDJAGAssertion", mock.Anything, testAssertion).
 		Return(&tokenservice.IDJAGAssertionClaims{
 			Sub:    testUserID,
 			Iss:    testCustomIssuer,

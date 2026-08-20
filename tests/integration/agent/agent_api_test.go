@@ -19,6 +19,10 @@ import (
 const (
 	testServerURL = "https://localhost:8095"
 	agentBasePath = "/agents"
+
+	// Handles of the two isolated auth flows used by the flow-handle resolution tests.
+	handleAuthFlowHandle1 = "agent-api-handle-flow-1"
+	handleAuthFlowHandle2 = "agent-api-handle-flow-2"
 )
 
 var (
@@ -74,8 +78,11 @@ var (
 
 var (
 	testOUID          string
-	agentSchemaID     string
 	defaultAuthFlowID string
+
+	// IDs of the isolated auth flows referenced by handle in the resolution tests.
+	handleAuthFlowID1 string
+	handleAuthFlowID2 string
 
 	// IDs set during SetupSuite for the primary agent used across multiple tests.
 	createdAgentID   string
@@ -86,6 +93,7 @@ var (
 // OAuth CC token issuance, tree-path endpoints, group membership, and error paths.
 type AgentAPITestSuite struct {
 	suite.Suite
+	agentTypeSnapshot *testutils.AgentTypeSnapshot
 }
 
 func TestAgentAPITestSuite(t *testing.T) {
@@ -99,13 +107,23 @@ func (ts *AgentAPITestSuite) SetupSuite() {
 	ts.Require().NoError(err, "Failed to create test organization unit")
 	testOUID = ouID
 
+	// The `default` agent type is a singleton shared with every other suite. Snapshot it before
+	// pointing it at this suite's OU, so teardown can put it back before that OU is deleted.
+	snapshot, err := testutils.SnapshotAgentType()
+	ts.Require().NoError(err, "Failed to snapshot the default agent type")
+	ts.agentTypeSnapshot = snapshot
+
 	agentSchema.OUID = testOUID
-	schemaID, err := testutils.CreateAgentType(agentSchema)
+	_, err = testutils.CreateAgentType(agentSchema)
 	ts.Require().NoError(err, "Failed to create agent schema (user type)")
-	agentSchemaID = schemaID
 
 	defaultAuthFlowID, err = testutils.GetFlowIDByHandle("default-flow", "AUTHENTICATION")
 	ts.Require().NoError(err, "Failed to get default auth flow ID")
+
+	handleAuthFlowID1, err = testutils.CreateIsolatedAuthFlow(handleAuthFlowHandle1)
+	ts.Require().NoError(err, "Failed to create the first isolated auth flow")
+	handleAuthFlowID2, err = testutils.CreateIsolatedAuthFlow(handleAuthFlowHandle2)
+	ts.Require().NoError(err, "Failed to create the second isolated auth flow")
 
 	// Create the primary agent used by list/get/update/groups tests.
 	primaryAgent := entityOnlyAgent
@@ -123,9 +141,19 @@ func (ts *AgentAPITestSuite) TearDownSuite() {
 			ts.T().Logf("Failed to delete primary agent during teardown: %v", err)
 		}
 	}
-	if agentSchemaID != "" {
-		if err := testutils.DeleteAgentType(agentSchemaID); err != nil {
-			ts.T().Logf("Failed to delete agent schema during teardown: %v", err)
+	for _, flowID := range []string{handleAuthFlowID1, handleAuthFlowID2} {
+		if flowID == "" {
+			continue
+		}
+		if err := testutils.DeleteFlow(flowID); err != nil {
+			ts.T().Logf("Failed to delete isolated auth flow %s during teardown: %v", flowID, err)
+		}
+	}
+	// Restore the shared agent type before deleting the OU it points at, or the singleton is left
+	// referencing a deleted OU and a later suite's restore fails.
+	if ts.agentTypeSnapshot != nil {
+		if err := testutils.RestoreAgentType(ts.agentTypeSnapshot); err != nil {
+			ts.T().Errorf("teardown: failed to restore the default agent type: %v", err)
 		}
 	}
 	if testOUID != "" {
@@ -636,6 +664,140 @@ func (ts *AgentAPITestSuite) TestUpdateAgent_RemoveInboundProfile() {
 		"AuthFlowID must be cleared after removing inbound profile")
 }
 
+// --- flow handle resolution on update ---
+//
+// Handles are input-only: the API resolves them to IDs and returns only the resolved ID, so these
+// tests send raw request bodies and assert on the ID fields of the response.
+
+// TestUpdateAgent_AuthFlowHandleOnly_ResolvesToFlowID covers an update whose only inbound field is
+// authFlowHandle. The handle must resolve and the inbound client must survive, rather than the
+// request being read as "no inbound fields supplied" and the client being dropped.
+func (ts *AgentAPITestSuite) TestUpdateAgent_AuthFlowHandleOnly_ResolvesToFlowID() {
+	agentID, err := createAgent(Agent{
+		OUID:       testOUID,
+		Type:       "default",
+		Name:       "handle-only-agent",
+		AuthFlowID: handleAuthFlowID1,
+	})
+	ts.Require().NoError(err)
+	defer func() { _ = deleteAgent(agentID) }()
+
+	resp, err := putAgentRaw(agentID, map[string]interface{}{
+		"ouId":           testOUID,
+		"type":           "default",
+		"name":           "handle-only-agent",
+		"authFlowHandle": handleAuthFlowHandle1,
+	})
+	ts.Require().NoError(err)
+	defer resp.Body.Close()
+	ts.Require().Equal(http.StatusOK, resp.StatusCode, readBody(resp))
+
+	var updated Agent
+	ts.Require().NoError(json.NewDecoder(resp.Body).Decode(&updated))
+	ts.Assert().Equal(handleAuthFlowID1, updated.AuthFlowID,
+		"authFlowHandle must resolve to its flow ID on update")
+
+	// Confirm the resolved binding was persisted, not just echoed in the response.
+	getResp, err := doGet(testServerURL + agentBasePath + "/" + agentID)
+	ts.Require().NoError(err)
+	defer getResp.Body.Close()
+	ts.Require().Equal(http.StatusOK, getResp.StatusCode, readBody(getResp))
+
+	var fetched Agent
+	ts.Require().NoError(json.NewDecoder(getResp.Body).Decode(&fetched))
+	ts.Assert().Equal(handleAuthFlowID1, fetched.AuthFlowID,
+		"the resolved auth flow ID must be persisted")
+}
+
+// TestUpdateAgent_AuthFlowHandleRepointed_SwitchesFlow covers a handle that resolves to a flow
+// other than the one currently bound: the agent must move to the new flow.
+func (ts *AgentAPITestSuite) TestUpdateAgent_AuthFlowHandleRepointed_SwitchesFlow() {
+	agentID, err := createAgent(Agent{
+		OUID:       testOUID,
+		Type:       "default",
+		Name:       "handle-repoint-agent",
+		AuthFlowID: handleAuthFlowID1,
+	})
+	ts.Require().NoError(err)
+	defer func() { _ = deleteAgent(agentID) }()
+
+	resp, err := putAgentRaw(agentID, map[string]interface{}{
+		"ouId":           testOUID,
+		"type":           "default",
+		"name":           "handle-repoint-agent",
+		"authFlowHandle": handleAuthFlowHandle2,
+	})
+	ts.Require().NoError(err)
+	defer resp.Body.Close()
+	ts.Require().Equal(http.StatusOK, resp.StatusCode, readBody(resp))
+
+	var updated Agent
+	ts.Require().NoError(json.NewDecoder(resp.Body).Decode(&updated))
+	ts.Assert().Equal(handleAuthFlowID2, updated.AuthFlowID,
+		"a handle pointing at a different flow must switch the binding")
+}
+
+// TestUpdateAgent_UnresolvableAuthFlowHandle_PreservesExistingFlow covers a handle that resolves to
+// nothing: the update must be rejected and the previously bound flow left untouched.
+func (ts *AgentAPITestSuite) TestUpdateAgent_UnresolvableAuthFlowHandle_PreservesExistingFlow() {
+	agentID, err := createAgent(Agent{
+		OUID:       testOUID,
+		Type:       "default",
+		Name:       "handle-unresolvable-agent",
+		AuthFlowID: handleAuthFlowID1,
+	})
+	ts.Require().NoError(err)
+	defer func() { _ = deleteAgent(agentID) }()
+
+	resp, err := putAgentRaw(agentID, map[string]interface{}{
+		"ouId":           testOUID,
+		"type":           "default",
+		"name":           "handle-unresolvable-agent",
+		"authFlowHandle": "agent-api-nonexistent-flow-handle",
+	})
+	ts.Require().NoError(err)
+	defer resp.Body.Close()
+	ts.Require().Equal(http.StatusBadRequest, resp.StatusCode, readBody(resp))
+
+	getResp, err := doGet(testServerURL + agentBasePath + "/" + agentID)
+	ts.Require().NoError(err)
+	defer getResp.Body.Close()
+	ts.Require().Equal(http.StatusOK, getResp.StatusCode, readBody(getResp))
+
+	var fetched Agent
+	ts.Require().NoError(json.NewDecoder(getResp.Body).Decode(&fetched))
+	ts.Assert().Equal(handleAuthFlowID1, fetched.AuthFlowID,
+		"a rejected update must leave the existing auth flow binding intact")
+}
+
+// TestUpdateAgent_AuthFlowIDTakesPrecedenceOverHandle covers a request carrying both fields: the
+// explicit ID wins and the handle is ignored.
+func (ts *AgentAPITestSuite) TestUpdateAgent_AuthFlowIDTakesPrecedenceOverHandle() {
+	agentID, err := createAgent(Agent{
+		OUID: testOUID,
+		Type: "default",
+		Name: "handle-precedence-agent",
+	})
+	ts.Require().NoError(err)
+	defer func() { _ = deleteAgent(agentID) }()
+
+	resp, err := putAgentRaw(agentID, map[string]interface{}{
+		"ouId":           testOUID,
+		"type":           "default",
+		"name":           "handle-precedence-agent",
+		"authFlowId":     handleAuthFlowID1,
+		"authFlowHandle": handleAuthFlowHandle2,
+	})
+	ts.Require().NoError(err)
+	defer resp.Body.Close()
+	ts.Require().Equal(http.StatusOK, resp.StatusCode, readBody(resp))
+
+	var updated Agent
+	ts.Require().NoError(json.NewDecoder(resp.Body).Decode(&updated))
+	ts.Assert().Equal(handleAuthFlowID1, updated.AuthFlowID,
+		"authFlowId must win when both the ID and the handle are supplied")
+}
+
 // --- helpers ---
 
 func createAgent(agent Agent) (string, error) {
@@ -679,6 +841,22 @@ func deleteAgent(agentID string) error {
 		return fmt.Errorf("expected status 204, got %d. Response: %s", resp.StatusCode, string(body))
 	}
 	return nil
+}
+
+// putAgentRaw sends an update with an arbitrary body, so tests can supply the handle fields that
+// the ID-only Agent struct deliberately omits.
+func putAgentRaw(agentID string, body map[string]interface{}) (*http.Response, error) {
+	data, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	client := testutils.GetHTTPClient()
+	req, err := http.NewRequest("PUT", testServerURL+agentBasePath+"/"+agentID, bytes.NewReader(data))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	return client.Do(req)
 }
 
 func doGet(url string) (*http.Response, error) {
@@ -740,8 +918,8 @@ var (
 // AgentAttributesTestSuite covers custom attribute CRUD and filter operations on agents.
 type AgentAttributesTestSuite struct {
 	suite.Suite
-	ouID     string
-	schemaID string
+	ouID              string
+	agentTypeSnapshot *testutils.AgentTypeSnapshot
 }
 
 func TestAgentAttributesTestSuite(t *testing.T) {
@@ -753,15 +931,24 @@ func (ts *AgentAttributesTestSuite) SetupSuite() {
 	ts.Require().NoError(err, "Failed to create test organization unit")
 	ts.ouID = ouID
 
+	// The `default` agent type is a singleton shared with every other suite. Snapshot it before
+	// pointing it at this suite's OU, so teardown can put it back before that OU is deleted.
+	snapshot, err := testutils.SnapshotAgentType()
+	ts.Require().NoError(err, "Failed to snapshot the default agent type")
+	ts.agentTypeSnapshot = snapshot
+
 	attrAgentSchema.OUID = ts.ouID
-	schemaID, err := testutils.CreateAgentType(attrAgentSchema)
+	_, err = testutils.CreateAgentType(attrAgentSchema)
 	ts.Require().NoError(err, "Failed to create agent schema")
-	ts.schemaID = schemaID
 }
 
 func (ts *AgentAttributesTestSuite) TearDownSuite() {
-	if ts.schemaID != "" {
-		_ = testutils.DeleteAgentType(ts.schemaID)
+	// Restore the shared agent type before deleting the OU it points at, or the singleton is left
+	// referencing a deleted OU and a later suite's restore fails.
+	if ts.agentTypeSnapshot != nil {
+		if err := testutils.RestoreAgentType(ts.agentTypeSnapshot); err != nil {
+			ts.T().Errorf("teardown: failed to restore the default agent type: %v", err)
+		}
 	}
 	if ts.ouID != "" {
 		_ = testutils.DeleteOrganizationUnit(ts.ouID)
@@ -845,7 +1032,8 @@ func (ts *AgentAttributesTestSuite) TestAgentAttributes_UpdateAttributes() {
 }
 
 // TestAgentAttributes_FilterByAttribute verifies that GET /agents?filter=attr eq "value"
-// returns only matching agents.
+// returns exactly the matching agents. The result set is pinned by count and by ID, so a filter
+// that silently widened to every agent would fail rather than still finding the expected one.
 func (ts *AgentAttributesTestSuite) TestAgentAttributes_FilterByAttribute() {
 	idA, err := createAgent(Agent{
 		OUID:       ts.ouID,
@@ -875,14 +1063,11 @@ func (ts *AgentAttributesTestSuite) TestAgentAttributes_FilterByAttribute() {
 	var listResp AgentListResponse
 	ts.Require().NoError(json.NewDecoder(resp.Body).Decode(&listResp))
 
-	found := false
-	for _, a := range listResp.Agents {
-		if a.ID == idA {
-			found = true
-		}
-		ts.Assert().NotEqual(idB, a.ID, "Beta agent must not appear in filtered results")
-	}
-	ts.Assert().True(found, "Alpha agent must appear in filtered results")
+	ts.Assert().Equal(1, listResp.TotalResults, "filter must match exactly the alpha agent")
+	ts.Assert().Equal(1, listResp.Count)
+	ts.Require().Len(listResp.Agents, 1)
+	ts.Assert().Equal(idA, listResp.Agents[0].ID,
+		"the single match must be the alpha agent, which also proves beta was excluded")
 }
 
 // TestAgentAttributes_NullifyAttributes verifies that omitting attributes on update

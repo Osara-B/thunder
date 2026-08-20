@@ -1099,7 +1099,7 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/ResourcePermissions'
-          description: "List of resource permissions grouped by resource server"
+          description: "List of resource permissions grouped by resource server. Always returned as an array, with an empty array when the role has no permissions."
 
     RoleWithAssignments:
       allOf:

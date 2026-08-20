@@ -203,36 +203,45 @@ func Run(verbose, forceSetup bool) {
 // replLoop runs the REPL repeatedly, re-entering after no-op upgrades or version switches.
 // An actual upgrade or normal exit breaks the loop.
 func replLoop(version, installPath string, proc *exec.Cmd, verbose, isFirstRun bool, newVersion, nodeWarning string, port int, creds *setup.AdminCredentials) {
+	notice := ""
 	for {
-		upgradeRequested, switchRequested, err := ui.RunREPL(version, proc, installPath, verbose, isFirstRun, newVersion, nodeWarning, port, creds)
+		upgradeRequested, switchRequested, err := ui.RunREPL(version, proc, installPath, verbose, isFirstRun, newVersion, nodeWarning, port, creds, notice)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "\nREPL error: %v\n", err)
 			os.Exit(1)
 		}
 		isFirstRun = false
-		newVersion = ""
+		notice = ""
 
 		if upgradeRequested {
-			upgraded, err := upgrade.Run(BaseDir(), upgrade.Opts{Verbose: verbose, Port: port})
+			upgraded, upgradeNotice, err := upgrade.Run(BaseDir(), upgrade.Opts{Verbose: verbose, Port: port})
 			if err != nil {
+				fmt.Fprintf(os.Stderr, "\nUpgrade failed: %v\n", err)
 				os.Exit(1)
 			}
 			if upgraded {
 				return // upgrade ran its own REPL internally
 			}
-			// Already latest or cancelled — ThunderID is still running; reattach.
+			// Already latest or cancelled — reattach to the still-running instance,
+			// surfacing why inside the REPL rather than printing to a screen the
+			// next alternate-screen redraw would immediately hide.
+			notice = upgradeNotice
 			continue
 		}
 
 		if switchRequested {
-			switched, err := upgrade.Switch(BaseDir(), version, port, verbose)
+			switched, switchNotice, err := upgrade.Switch(BaseDir(), version, port, verbose, newVersion)
 			if err != nil {
+				fmt.Fprintf(os.Stderr, "\nSwitch failed: %v\n", err)
 				os.Exit(1)
 			}
 			if switched {
 				return // Switch ran its own REPL internally
 			}
-			// Cancelled — reattach to the still-running instance.
+			// Cancelled or unavailable — reattach to the still-running instance,
+			// surfacing why inside the REPL rather than printing to a screen the
+			// next alternate-screen redraw would immediately hide.
+			notice = switchNotice
 			continue
 		}
 

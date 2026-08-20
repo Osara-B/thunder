@@ -391,6 +391,20 @@ func (ts *PARTestSuite) TestPAREndpointValidation() {
 			},
 			ExpectedError: "login_required",
 		},
+		{
+			// This test reflects current behavior; account selection prompts are not implemented yet.
+			Name: "Prompt Select Account Not Supported",
+			Params: map[string]string{
+				"response_type":         "code",
+				"redirect_uri":          redirectURI,
+				"scope":                 "openid",
+				"state":                 "test",
+				"prompt":                "select_account",
+				"code_challenge":        testutils.GenerateCodeChallenge("test-verifier-that-is-at-least-43-characters-long-enough"),
+				"code_challenge_method": "S256",
+			},
+			ExpectedError: "account_selection_required",
+		},
 	}
 
 	for _, tc := range testCases {

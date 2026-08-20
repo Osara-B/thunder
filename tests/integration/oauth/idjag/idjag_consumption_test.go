@@ -592,15 +592,16 @@ func (ts *IDJAGConsumptionTestSuite) TestIDJAGConsumption_AudienceMismatch() {
 	ts.Equal("invalid_grant", resp.Error)
 }
 
-func (ts *IDJAGConsumptionTestSuite) TestIDJAGConsumption_ClientIDMismatch() {
+func (ts *IDJAGConsumptionTestSuite) TestIDJAGConsumption_CrossClientExchange() {
 	assertion := ts.buildIDJAGAssertion(func(h, c map[string]interface{}) {
-		c["client_id"] = "wrong-client-id"
+		c["client_id"] = "external-source-client"
 	})
 
 	resp, statusCode, err := ts.consumeIDJAG(assertion, nil, consumptionClientID, consumptionClientSecret)
 	ts.Require().NoError(err)
-	ts.Equal(http.StatusBadRequest, statusCode)
-	ts.Equal("invalid_grant", resp.Error)
+	ts.Equal(http.StatusOK, statusCode)
+	ts.NotEmpty(resp.AccessToken)
+	ts.Equal("Bearer", resp.TokenType)
 }
 
 func (ts *IDJAGConsumptionTestSuite) TestIDJAGConsumption_WrongTypHeader() {

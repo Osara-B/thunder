@@ -8,7 +8,6 @@ import (
 	"net/url"
 	"testing"
 
-	engineconfig "github.com/thunder-id/thunderid/pkg/thunderidengine/config"
 	"github.com/thunder-id/thunderid/pkg/thunderidengine/providers"
 
 	"github.com/stretchr/testify/assert"
@@ -31,7 +30,7 @@ func TestAuthorizationValidatorTestSuite(t *testing.T) {
 func (suite *AuthorizationValidatorTestSuite) SetupTest() {
 	sysconfig.ResetServerRuntime()
 	err := sysconfig.InitializeServerRuntime("/tmp/test", &sysconfig.Config{
-		OAuth: engineconfig.OAuthConfig{AllowWildcardRedirectURI: true},
+		OAuth: sysconfig.OAuthConfig{AllowWildcardRedirectURI: true},
 	})
 	suite.Require().NoError(err)
 

@@ -6,6 +6,7 @@ package presentation
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 
 	"github.com/thunder-id/thunderid/internal/ou"
@@ -332,6 +333,28 @@ func validateDefinition(dto *PresentationDefinitionDTO) *tidcommon.ServiceError 
 	}
 	if dto.Format != DefaultCredentialFormat {
 		return &ErrorDefinitionUnsupportedFormat
+	}
+	if svcErr := validateClaimNames(dto.RequestedClaims); svcErr != nil {
+		return svcErr
+	}
+	return validateClaimNames(slices.Concat(dto.MandatoryClaims, dto.OptionalClaims))
+}
+
+// validateClaimNames enforces non-empty, unique claim names within one requested list. The
+// mandatory and optional lists are checked as a single list, since a name may not appear as both:
+// the two carry contradictory disclosure requirements. RequestedClaims is checked on its own,
+// because it is the full set those two partition and so legitimately repeats their names.
+func validateClaimNames(claims []string) *tidcommon.ServiceError {
+	seen := make(map[string]bool, len(claims))
+	for _, claim := range claims {
+		name := strings.TrimSpace(claim)
+		if name == "" {
+			return &ErrorDefinitionEmptyClaimName
+		}
+		if seen[name] {
+			return ErrorDefinitionDuplicateClaim.WithParams(map[string]string{"claim": name})
+		}
+		seen[name] = true
 	}
 	return nil
 }

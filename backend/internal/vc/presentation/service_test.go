@@ -640,3 +640,88 @@ func (suite *DefinitionServiceTestSuite) TestDefinitionServiceIsDeclarativeSucce
 	suite.Require().Nil(svcErr)
 	suite.False(isDeclarative)
 }
+
+func (suite *DefinitionServiceTestSuite) TestDefinitionServiceRejectsDuplicateClaims() {
+	ctx := context.Background()
+
+	// The same name twice within one list.
+	svc, _ := newTestDefinitionService(suite.T())
+	_, svcErr := svc.CreatePresentationDefinition(ctx, &PresentationDefinitionDTO{
+		Handle: "dup-mandatory", VCT: "v",
+		MandatoryClaims: []string{"tier", "tier"},
+	})
+	suite.Require().NotNil(svcErr)
+	suite.Equal(ErrorDefinitionDuplicateClaim.Code, svcErr.Code)
+	suite.Equal("tier", svcErr.ErrorDescription.Params["claim"])
+
+	// The same name as both mandatory and optional.
+	svc, _ = newTestDefinitionService(suite.T())
+	_, svcErr = svc.CreatePresentationDefinition(ctx, &PresentationDefinitionDTO{
+		Handle: "dup-across", VCT: "v",
+		MandatoryClaims: []string{"tier"},
+		OptionalClaims:  []string{"full_name", "tier"},
+	})
+	suite.Require().NotNil(svcErr)
+	suite.Equal(ErrorDefinitionDuplicateClaim.Code, svcErr.Code)
+	suite.Equal("tier", svcErr.ErrorDescription.Params["claim"])
+}
+
+func (suite *DefinitionServiceTestSuite) TestDefinitionServiceRejectsEmptyClaimName() {
+	svc, _ := newTestDefinitionService(suite.T())
+
+	_, svcErr := svc.CreatePresentationDefinition(context.Background(), &PresentationDefinitionDTO{
+		Handle: "blank-claim", VCT: "v",
+		OptionalClaims: []string{"  "},
+	})
+	suite.Require().NotNil(svcErr)
+	suite.Equal(ErrorDefinitionEmptyClaimName.Code, svcErr.Code)
+}
+
+func (suite *DefinitionServiceTestSuite) TestDefinitionServiceAcceptsDistinctClaims() {
+	svc, _ := newTestDefinitionService(suite.T())
+
+	created, svcErr := svc.CreatePresentationDefinition(context.Background(), &PresentationDefinitionDTO{
+		Handle: "distinct-claims", VCT: "v",
+		MandatoryClaims: []string{"tier"},
+		OptionalClaims:  []string{"full_name"},
+	})
+	suite.Require().Nil(svcErr)
+	suite.Equal([]string{"tier"}, created.MandatoryClaims)
+	suite.Equal([]string{"full_name"}, created.OptionalClaims)
+}
+
+func (suite *DefinitionServiceTestSuite) TestDefinitionServiceRejectsInvalidRequestedClaims() {
+	ctx := context.Background()
+
+	svc, _ := newTestDefinitionService(suite.T())
+	_, svcErr := svc.CreatePresentationDefinition(ctx, &PresentationDefinitionDTO{
+		Handle: "dup-requested", VCT: "v",
+		RequestedClaims: []string{"tier", "tier"},
+	})
+	suite.Require().NotNil(svcErr)
+	suite.Equal(ErrorDefinitionDuplicateClaim.Code, svcErr.Code)
+	suite.Equal("tier", svcErr.ErrorDescription.Params["claim"])
+
+	svc, _ = newTestDefinitionService(suite.T())
+	_, svcErr = svc.CreatePresentationDefinition(ctx, &PresentationDefinitionDTO{
+		Handle: "blank-requested", VCT: "v",
+		RequestedClaims: []string{"  "},
+	})
+	suite.Require().NotNil(svcErr)
+	suite.Equal(ErrorDefinitionEmptyClaimName.Code, svcErr.Code)
+}
+
+// The requested list is the full set the mandatory and optional lists partition, so repeating
+// their names in it is valid and must not be read as a duplicate.
+func (suite *DefinitionServiceTestSuite) TestDefinitionServiceAcceptsRequestedClaimsSupersetting() {
+	svc, _ := newTestDefinitionService(suite.T())
+
+	created, svcErr := svc.CreatePresentationDefinition(context.Background(), &PresentationDefinitionDTO{
+		Handle: "requested-superset", VCT: "v",
+		RequestedClaims: []string{"tier", "full_name"},
+		MandatoryClaims: []string{"tier"},
+		OptionalClaims:  []string{"full_name"},
+	})
+	suite.Require().Nil(svcErr)
+	suite.Equal([]string{"tier", "full_name"}, created.RequestedClaims)
+}

@@ -48,8 +48,8 @@ func InitiateAuthorizationFlow(clientID, redirectURI, responseType, scope, state
 // InitiateAuthorizationFlowWithResource starts the OAuth2 authorization flow with resource parameter
 func InitiateAuthorizationFlowWithResource(clientID, redirectURI, responseType, scope, state,
 	resource string) (*http.Response, error) {
-	return initiateAuthorizationFlow(
-		clientID, redirectURI, responseType, scope, state, resource, "", "", "", "", "", "")
+	return initiateAuthorizationFlow(clientID, redirectURI, responseType, scope, state, resource,
+		"", "", "", "", "", "")
 }
 
 // InitiateAuthorizationFlowWithPKCE starts the OAuth2 authorization flow with PKCE parameters
@@ -65,6 +65,15 @@ func InitiateAuthorizationFlowWithClaims(
 ) (*http.Response, error) {
 	return initiateAuthorizationFlow(
 		clientID, redirectURI, responseType, scope, state, "", "", "", claimsParam, "", "", "")
+}
+
+// InitiateAuthorizationFlowWithClaimsAndPrompt starts the OAuth2 authorization flow with both the
+// claims and the prompt parameters.
+func InitiateAuthorizationFlowWithClaimsAndPrompt(
+	clientID, redirectURI, responseType, scope, state, claimsParam, prompt string,
+) (*http.Response, error) {
+	return initiateAuthorizationFlow(
+		clientID, redirectURI, responseType, scope, state, "", "", "", claimsParam, "", "", prompt)
 }
 
 // InitiateAuthorizationFlowWithClaimsLocales starts the OAuth2 authorization flow with claims_locales parameter
@@ -147,6 +156,31 @@ func initiateAuthorizationFlow(clientID, redirectURI, responseType, scope, state
 		return nil, fmt.Errorf("failed to send authorization request: %w", err)
 	}
 
+	return resp, nil
+}
+
+// SubmitAuthorizationRequest sends an arbitrary parameter set to the authorization endpoint without
+// following redirects, so the caller can assert on the redirect the server produced. Use this for
+// parameters the InitiateAuthorizationFlow variants do not cover, such as prompt.
+func SubmitAuthorizationRequest(params url.Values) (*http.Response, error) {
+	req, err := http.NewRequest("GET", TestServerURL+"/oauth2/authorize?"+params.Encode(), nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create authorization request: %w", err)
+	}
+
+	client := &http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		},
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send authorization request: %w", err)
+	}
 	return resp, nil
 }
 

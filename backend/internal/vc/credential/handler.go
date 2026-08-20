@@ -115,18 +115,18 @@ func requestToDTO(req *credentialConfigurationRequest) *CredentialConfigurationD
 	}
 }
 
-// sanitizeClaims trims claim names and display names, dropping entries with no name.
+// sanitizeClaims trims claim names and display names. Entries left without a name are kept so
+// that validation rejects them, rather than silently dropping part of the submitted configuration.
 func sanitizeClaims(in []ClaimMapping) []ClaimMapping {
+	if len(in) == 0 {
+		return nil
+	}
 	out := make([]ClaimMapping, 0, len(in))
 	for _, c := range in {
-		name := sysutils.SanitizeString(c.Name)
-		if name == "" {
-			continue
-		}
-		out = append(out, ClaimMapping{Name: name, DisplayName: sysutils.SanitizeString(c.DisplayName)})
-	}
-	if len(out) == 0 {
-		return nil
+		out = append(out, ClaimMapping{
+			Name:        sysutils.SanitizeString(c.Name),
+			DisplayName: sysutils.SanitizeString(c.DisplayName),
+		})
 	}
 	return out
 }

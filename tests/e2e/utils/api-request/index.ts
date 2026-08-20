@@ -46,12 +46,15 @@ export async function send(
       ...(data === undefined ? {} : { data }),
     });
 
-  const response = await fetchWith(await auth(request));
+  const usedTokenPromise = auth(request);
+  const response = await fetchWith(await usedTokenPromise);
   if (response.status() !== 401) {
     return response;
   }
   // The memoized token may have expired mid-suite; get a fresh one and retry once.
-  tokenPromise = undefined;
+  if (tokenPromise === usedTokenPromise) {
+    tokenPromise = undefined;
+  }
   return fetchWith(await auth(request));
 }
 

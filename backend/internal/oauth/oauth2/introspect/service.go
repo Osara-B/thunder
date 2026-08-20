@@ -7,11 +7,13 @@ package introspect
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/thunder-id/thunderid/internal/oauth/oauth2/constants"
 	"github.com/thunder-id/thunderid/internal/oauth/oauth2/dpop"
 	"github.com/thunder-id/thunderid/internal/oauth/oauth2/revocation"
 	"github.com/thunder-id/thunderid/internal/oauth/oauth2/tokenservice"
+	"github.com/thunder-id/thunderid/internal/system/jose/jwt"
 	"github.com/thunder-id/thunderid/internal/system/log"
 )
 
@@ -45,10 +47,9 @@ func (s *tokenIntrospectionService) IntrospectToken(
 		return nil, errors.New("token is required")
 	}
 
-	// ValidateToken verifies the signature and enforces the RFC 7009 deny list. A revoked or otherwise
-	// invalid token is inactive per RFC 7662; if the deny list cannot be consulted we fail closed
-	// (surface a server error) rather than asserting the token is active.
-	payload, err := s.tokenValidator.ValidateToken(ctx, token)
+	// RFC 7662 Section 2.1 scopes introspection to access and refresh tokens, so anything else this
+	// server signs (ID tokens, flow assertions) is reported inactive.
+	payload, err := s.validateByType(ctx, token)
 	if err != nil {
 		if errors.Is(err, revocation.ErrEnforcementUnavailable) {
 			logger.Error(ctx, "Token revocation status could not be verified", log.Error(err))
@@ -61,6 +62,33 @@ func (s *tokenIntrospectionService) IntrospectToken(
 	}
 
 	return s.prepareValidResponse(payload), nil
+}
+
+// validateByType validates the token with the validator for its typ header and returns its claims.
+func (s *tokenIntrospectionService) validateByType(
+	ctx context.Context, token string,
+) (map[string]interface{}, error) {
+	header, err := jwt.DecodeJWTHeader(token)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode token header: %w", err)
+	}
+
+	switch typ, _ := header["typ"].(string); typ {
+	case jwt.TokenTypeAccessToken:
+		claims, validateErr := s.tokenValidator.ValidateAccessToken(ctx, token)
+		if validateErr != nil {
+			return nil, validateErr
+		}
+		return claims.Claims, nil
+	case jwt.TokenTypeJWT:
+		claims, validateErr := s.tokenValidator.ValidateRefreshToken(ctx, token)
+		if validateErr != nil {
+			return nil, validateErr
+		}
+		return claims.Claims, nil
+	default:
+		return nil, fmt.Errorf("token type %q is not introspectable", typ)
+	}
 }
 
 // prepareValidResponse prepares the response for a valid token introspection.

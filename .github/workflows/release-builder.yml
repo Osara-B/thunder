@@ -11,6 +11,11 @@ on:
   #   - cron: '30 6 * * 5'
   workflow_dispatch:
     inputs:
+      branch:
+        description: 'Branch to build the release from'
+        required: false
+        type: string
+        default: 'release'
       version:
         description: 'Release version to build (e.g. v1.0.0-beta3). Overrides bump_type and use_existing_version.'
         required: false
@@ -55,7 +60,7 @@ env:
   GOFLAGS: "-mod=readonly"
   PRODUCT_NAME: "ThunderID"
   PRODUCT_NAME_LOWER: "thunderid"
-  RELEASE_BRANCH: "release"
+  RELEASE_BRANCH: ${{ inputs.branch || 'release' }}
   RELEASE_GIT_USER_NAME: "thunderid-automation-bot"
   RELEASE_GIT_USER_EMAIL: "thunderid-bot@thunderid.dev"
   NODE_VERSION: "lts/*"
@@ -221,8 +226,8 @@ jobs:
             echo "✅ No changes to commit (files already at $VERSION)"
           else
             git commit -m "[Release] Bump version to ${VERSION}"
-            git push origin HEAD:release
-            echo "✅ Pushed version bump commit to release branch"
+            git push origin "HEAD:${RELEASE_BRANCH}"
+            echo "✅ Pushed version bump commit to ${RELEASE_BRANCH} branch"
           fi
 
       - name: ⚙️ Set up Go Environment  
@@ -288,44 +293,18 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
+      # Checks out the dispatched ref, not the release branch, so the local
+      # composite action below is read from this workflow's own revision. The
+      # action then checks out RELEASE_BRANCH to supply the test sources.
       - name: 📥 Checkout Code
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-        with:
-          ref: ${{ env.RELEASE_BRANCH }}
-
-      - name: ⚙️ Set up Go Environment
-        uses: ./.github/actions/setup-go
-
-      - name: 🗄️ Cache Go Modules
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
-        id: cache-go-modules
-        with:
-          path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
-          key: ${{ runner.os }}-go-modules-${{ hashFiles('**/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-go-modules-
-
-      - name: 📦 Install Dependencies
-        run: |
-          cd backend
-          go mod download
-          cd ../tests/integration
-          go mod download
-
-      - name: 📝 Configure Test Database
-        run: |
-          chmod +x tests/integration/resources/scripts/setup-test-config.sh
-          ./tests/integration/resources/scripts/setup-test-config.sh
-        env:
-          DB_TYPE: ${{ matrix.database }}
 
       - name: 🧪 Run Integration Tests (${{ matrix.database }})
         uses: ./.github/actions/run-integration-tests
         with:
           database-type: ${{ matrix.database }}
           coverage-enabled: true
+          ref: ${{ env.RELEASE_BRANCH }}
 
   validate-windows:
     name: 🪟 Validate Windows PowerShell

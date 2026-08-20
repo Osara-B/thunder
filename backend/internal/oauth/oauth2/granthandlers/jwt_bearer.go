@@ -79,7 +79,7 @@ func (h *jwtBearerGrantHandler) HandleGrant(ctx context.Context, tokenRequest *m
 	logger := log.GetLogger().With(log.String(log.LoggerKeyComponentName, "JWTBearerGrantHandler"))
 
 	assertionClaims, err := h.tokenValidator.ValidateIDJAGAssertion(
-		ctx, tokenRequest.Assertion, tokenRequest.ClientID)
+		ctx, tokenRequest.Assertion)
 	if err != nil {
 		logger.Debug(ctx, "Failed to validate ID-JAG assertion", log.Error(err))
 		switch {

@@ -221,8 +221,8 @@ func (ts *UserTypeAuthzTestSuite) TearDownSuite() {
 		}
 	}
 	if ts.scopedRSID != "" {
-		if err := testutils.DeleteResourceServer(ts.scopedRSID); err != nil {
-			ts.T().Logf("teardown: delete scoped resource server: %v", err)
+		if err := testutils.DeleteResourceServerWithChildren(ts.scopedRSID); err != nil {
+			ts.T().Errorf("teardown: delete scoped resource server: %v", err)
 		}
 	}
 	// Delete the test user.

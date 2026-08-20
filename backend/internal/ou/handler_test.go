@@ -485,10 +485,10 @@ func (suite *OrganizationUnitHandlerTestSuite) TestOUHandler_HandleOUPostRequest
 					On("CreateOrganizationUnit", mock.Anything,
 						mock.MatchedBy(func(req providers.OrganizationUnitRequestWithID) bool {
 							return req.Handle == defaultOUHandle &&
-								req.Name == "Finance &lt;script&gt;" &&
+								req.Name == "Finance <script>" &&
 								req.Description == "desc"
 						})).
-					Return(providers.OrganizationUnit{ID: "ou-1", Name: "Finance &lt;script&gt;"}, nil).
+					Return(providers.OrganizationUnit{ID: "ou-1", Name: "Finance <script>"}, nil).
 					Once()
 			},
 			assert: func(recorder *httptest.ResponseRecorder) {
@@ -887,18 +887,18 @@ func (suite *OrganizationUnitHandlerTestSuite) TestOUHandler_HandleOUPutRequest(
 						defaultOURequestID,
 						mock.MatchedBy(func(req providers.OrganizationUnitRequestWithID) bool {
 							return req.Handle == defaultOUHandle &&
-								req.Name == "Finance &lt;script&gt;" &&
+								req.Name == "Finance <script>" &&
 								req.Description == "desc"
 						}),
 					).
-					Return(providers.OrganizationUnit{ID: defaultOURequestID, Name: "Finance &lt;script&gt;"}, nil).
+					Return(providers.OrganizationUnit{ID: defaultOURequestID, Name: "Finance <script>"}, nil).
 					Once()
 			},
 			assert: func(recorder *httptest.ResponseRecorder) {
 				suite.Equal(http.StatusOK, recorder.Code)
 				var resp providers.OrganizationUnit
 				suite.NoError(json.Unmarshal(recorder.Body.Bytes(), &resp))
-				suite.Equal("Finance &lt;script&gt;", resp.Name)
+				suite.Equal("Finance <script>", resp.Name)
 			},
 		},
 		{

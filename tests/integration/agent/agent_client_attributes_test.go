@@ -26,12 +26,12 @@ const (
 // allow-list.
 type AgentClientAttributesTestSuite struct {
 	suite.Suite
-	client           *http.Client
-	ouID             string
-	agentSchemaID    string
-	entityTypeID     string
-	ownerUserID      string
-	resourceServerID string
+	client            *http.Client
+	ouID              string
+	agentTypeSnapshot *testutils.AgentTypeSnapshot
+	entityTypeID      string
+	ownerUserID       string
+	resourceServerID  string
 }
 
 // TestAgentClientAttributesTestSuite runs the AgentClientAttributesTestSuite.
@@ -52,7 +52,13 @@ func (s *AgentClientAttributesTestSuite) SetupSuite() {
 	s.Require().NoError(err)
 	s.ouID = ouID
 
-	schemaID, err := testutils.CreateAgentType(testutils.UserType{
+	// The `default` agent type is a singleton shared with every other suite. Snapshot it before
+	// pointing it at this suite's OU, so teardown can put it back before that OU is deleted.
+	snapshot, err := testutils.SnapshotAgentType()
+	s.Require().NoError(err)
+	s.agentTypeSnapshot = snapshot
+
+	_, err = testutils.CreateAgentType(testutils.UserType{
 		Name: "default",
 		OUID: s.ouID,
 		Schema: map[string]interface{}{
@@ -61,7 +67,6 @@ func (s *AgentClientAttributesTestSuite) SetupSuite() {
 		},
 	})
 	s.Require().NoError(err)
-	s.agentSchemaID = schemaID
 
 	entityTypeID, err := testutils.CreateUserType(testutils.UserType{
 		Name: "agent-client-attrs-owner",
@@ -100,7 +105,8 @@ func (s *AgentClientAttributesTestSuite) SetupSuite() {
 // TearDownSuite deletes the shared resources created in SetupSuite.
 func (s *AgentClientAttributesTestSuite) TearDownSuite() {
 	if s.resourceServerID != "" {
-		_ = testutils.DeleteResourceServer(s.resourceServerID)
+		s.NoError(testutils.DeleteResourceServerWithChildren(s.resourceServerID),
+			"teardown: delete resource server and its actions")
 	}
 	if s.ownerUserID != "" {
 		_ = testutils.DeleteUser(s.ownerUserID)
@@ -108,8 +114,12 @@ func (s *AgentClientAttributesTestSuite) TearDownSuite() {
 	if s.entityTypeID != "" {
 		_ = testutils.DeleteUserType(s.entityTypeID)
 	}
-	if s.agentSchemaID != "" {
-		_ = testutils.DeleteAgentType(s.agentSchemaID)
+	// Restore the shared agent type before deleting the OU it points at, or the singleton is left
+	// referencing a deleted OU and a later suite's restore fails.
+	if s.agentTypeSnapshot != nil {
+		if err := testutils.RestoreAgentType(s.agentTypeSnapshot); err != nil {
+			s.T().Errorf("teardown: failed to restore the default agent type: %v", err)
+		}
 	}
 	if s.ouID != "" {
 		_ = testutils.DeleteOrganizationUnit(s.ouID)

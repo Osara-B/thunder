@@ -31,6 +31,8 @@ const (
 	codeDefinitionUnsupportedFormat = "VP-2004"
 	codeDefinitionImmutable         = "VP-2005"
 	codeDefinitionInvalidOU         = "VP-2007"
+	codeDefinitionEmptyClaimName    = "VP-2008"
+	codeDefinitionDuplicateClaim    = "VP-2009"
 
 	// Declarative (file-backed) definitions seeded from
 	// resources/declarative_resources/presentation_definitions. They are
@@ -400,6 +402,42 @@ func (ts *PresentationDefinitionAPITestSuite) TestCreate_ValidationErrors() {
 				d.OUHandle = "no-such-ou-handle"
 			},
 			wantCode: codeDefinitionInvalidOU,
+		},
+		{
+			name: "empty claim name",
+			mutate: func(d *testutils.PresentationDefinition) {
+				d.MandatoryClaims = []string{"  "}
+			},
+			wantCode: codeDefinitionEmptyClaimName,
+		},
+		{
+			name: "duplicate claim within a list",
+			mutate: func(d *testutils.PresentationDefinition) {
+				d.MandatoryClaims = []string{"given_name", "given_name"}
+			},
+			wantCode: codeDefinitionDuplicateClaim,
+		},
+		{
+			name: "claim both mandatory and optional",
+			mutate: func(d *testutils.PresentationDefinition) {
+				d.MandatoryClaims = []string{"given_name"}
+				d.OptionalClaims = []string{"given_name"}
+			},
+			wantCode: codeDefinitionDuplicateClaim,
+		},
+		{
+			name: "empty requested claim name",
+			mutate: func(d *testutils.PresentationDefinition) {
+				d.RequestedClaims = []string{"  "}
+			},
+			wantCode: codeDefinitionEmptyClaimName,
+		},
+		{
+			name: "duplicate requested claim",
+			mutate: func(d *testutils.PresentationDefinition) {
+				d.RequestedClaims = []string{"given_name", "given_name"}
+			},
+			wantCode: codeDefinitionDuplicateClaim,
 		},
 	}
 

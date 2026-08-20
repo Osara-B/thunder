@@ -22,8 +22,12 @@ func main() {
 	// upgrade — stop the running version, install the latest, restart on the same port.
 	if len(args) > 0 && args[0] == "upgrade" {
 		verbose, _ := parseFlags(args[1:])
-		if _, err := upgrade.Run(cli.BaseDir(), upgrade.Opts{Verbose: verbose}); err != nil {
+		_, notice, err := upgrade.Run(cli.BaseDir(), upgrade.Opts{Verbose: verbose})
+		if err != nil {
 			os.Exit(1)
+		}
+		if notice != "" {
+			fmt.Println("  " + notice)
 		}
 		return
 	}

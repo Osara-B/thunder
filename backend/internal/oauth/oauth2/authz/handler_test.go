@@ -62,7 +62,7 @@ func (suite *AuthorizeHandlerTestSuite) SetupTest() {
 		JWT: engineconfig.JWTConfig{
 			Issuer: "https://localhost:8090",
 		},
-		OAuth: engineconfig.OAuthConfig{
+		OAuth: config.OAuthConfig{
 			AuthorizationCode: engineconfig.AuthorizationCodeConfig{
 				ValidityPeriod: 600,
 			},

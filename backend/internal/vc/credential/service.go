@@ -342,5 +342,32 @@ func validateConfiguration(dto *CredentialConfigurationDTO) *tidcommon.ServiceEr
 	if dto.ValiditySeconds != nil && *dto.ValiditySeconds <= 0 {
 		return &ErrorConfigurationInvalidRequest
 	}
+	return validateClaims(dto.Claims)
+}
+
+// reservedClaimNames are the claim names that cannot be selectively disclosed.
+var reservedClaimNames = map[string]bool{
+	"iss": true, "nbf": true, "exp": true, "cnf": true, "vct": true, "status": true,
+	"_sd": true, "_sd_alg": true, "...": true,
+	"sub": true, "iat": true,
+}
+
+// validateClaims enforces non-empty, unique and non-reserved claim names. Claim names are compared
+// case-sensitively because they become JSON object keys in the issued credential.
+func validateClaims(claims []ClaimMapping) *tidcommon.ServiceError {
+	seen := make(map[string]bool, len(claims))
+	for _, claim := range claims {
+		name := strings.TrimSpace(claim.Name)
+		if name == "" {
+			return &ErrorConfigurationEmptyClaimName
+		}
+		if reservedClaimNames[name] {
+			return ErrorConfigurationReservedClaim.WithParams(map[string]string{"claim": name})
+		}
+		if seen[name] {
+			return ErrorConfigurationDuplicateClaim.WithParams(map[string]string{"claim": name})
+		}
+		seen[name] = true
+	}
 	return nil
 }

@@ -203,7 +203,7 @@ func (s *ConfigurationHandlerTestSuite) TestRequestToDTOSanitizes() {
 		VCT:         " v ",
 		Claims: []ClaimMapping{
 			{Name: "  given_name  ", DisplayName: "  Given Name  "},
-			{Name: "   ", DisplayName: "dropped"},
+			{Name: "   ", DisplayName: "  unnamed  "},
 		},
 		Display:         &CredentialDisplay{Locale: " en-US ", LogoURI: " uri "},
 		ValiditySeconds: &validity,
@@ -217,17 +217,25 @@ func (s *ConfigurationHandlerTestSuite) TestRequestToDTOSanitizes() {
 	s.Equal("A PID credential", dto.Description)
 	s.Equal("dc+sd-jwt", dto.Format)
 	s.Equal("v", dto.VCT)
-	s.Require().Len(dto.Claims, 1)
+	s.Require().Len(dto.Claims, 2)
 	s.Equal("given_name", dto.Claims[0].Name)
 	s.Equal("Given Name", dto.Claims[0].DisplayName)
+	// The unnamed claim is trimmed but retained, so validation can reject it.
+	s.Equal("", dto.Claims[1].Name)
+	s.Equal("unnamed", dto.Claims[1].DisplayName)
 	s.Require().NotNil(dto.Display)
 	s.Equal("en-US", dto.Display.Locale)
 	s.Equal(120, *dto.ValiditySeconds)
 }
 
-func (s *ConfigurationHandlerTestSuite) TestSanitizeClaimsAllEmpty() {
+func (s *ConfigurationHandlerTestSuite) TestSanitizeClaimsKeepsUnnamedForValidation() {
 	out := sanitizeClaims([]ClaimMapping{{Name: "   "}})
-	s.Nil(out)
+	s.Require().Len(out, 1)
+	s.Equal("", out[0].Name)
+}
+
+func (s *ConfigurationHandlerTestSuite) TestSanitizeClaimsNilWhenAbsent() {
+	s.Nil(sanitizeClaims(nil))
 }
 
 func (s *ConfigurationHandlerTestSuite) TestSanitizeDisplayNil() {

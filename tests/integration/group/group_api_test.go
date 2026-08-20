@@ -24,7 +24,8 @@ var (
 	}
 
 	testUserType = testutils.UserType{
-		Name: "group-test-person",
+		Name:             "group-test-person",
+		SystemAttributes: &testutils.UserTypeSystemAttributes{Display: "email"},
 		Schema: map[string]interface{}{
 			"email": map[string]interface{}{
 				"type": "string",

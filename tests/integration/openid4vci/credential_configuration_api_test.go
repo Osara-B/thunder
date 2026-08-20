@@ -31,6 +31,9 @@ const (
 	codeConfigUnsupportedFormat = "VCI-2004"
 	codeConfigImmutable         = "VCI-2005"
 	codeConfigInvalidOU         = "VCI-2007"
+	codeConfigEmptyClaimName    = "VCI-2008"
+	codeConfigDuplicateClaim    = "VCI-2009"
+	codeConfigReservedClaim     = "VCI-2010"
 
 	// Declarative (file-backed) configurations seeded from
 	// resources/declarative_resources/credential_configurations. They are
@@ -400,6 +403,30 @@ func (ts *CredentialConfigurationAPITestSuite) TestCreate_ValidationErrors() {
 				c.OUHandle = "no-such-ou-handle"
 			},
 			wantCode: codeConfigInvalidOU,
+		},
+		{
+			name: "empty claim name",
+			mutate: func(c *testutils.CredentialConfiguration) {
+				c.Claims = []testutils.ClaimMapping{{Name: "  ", DisplayName: "Blank"}}
+			},
+			wantCode: codeConfigEmptyClaimName,
+		},
+		{
+			name: "duplicate claim name",
+			mutate: func(c *testutils.CredentialConfiguration) {
+				c.Claims = []testutils.ClaimMapping{
+					{Name: "given_name", DisplayName: "Given Name"},
+					{Name: "given_name", DisplayName: "Given Name Again"},
+				}
+			},
+			wantCode: codeConfigDuplicateClaim,
+		},
+		{
+			name: "reserved claim name",
+			mutate: func(c *testutils.CredentialConfiguration) {
+				c.Claims = []testutils.ClaimMapping{{Name: "vct", DisplayName: "Reserved"}}
+			},
+			wantCode: codeConfigReservedClaim,
 		},
 	}
 

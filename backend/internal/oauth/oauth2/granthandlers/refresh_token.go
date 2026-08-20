@@ -98,18 +98,14 @@ func (h *refreshTokenGrantHandler) ValidateGrant(ctx context.Context, tokenReque
 	return nil
 }
 
-// HandleGrant processes the refresh token grant request and generates a new token response.
-func (h *refreshTokenGrantHandler) HandleGrant(ctx context.Context, tokenRequest *model.TokenRequest,
-	oauthApp *providers.OAuthClient) (
-	*model.TokenResponseDTO, *model.ErrorResponse) {
-	logger := log.GetLogger().With(log.String(log.LoggerKeyComponentName, "RefreshTokenGrantHandler"))
-
-	// Validate refresh token using token validator
-	// ValidateRefreshToken verifies the token and enforces the RFC 7009 deny list. A revoked token is
-	// rejected as invalid_grant like any other invalid token; an unavailable deny list fails closed
-	// with a server_error.
-	refreshTokenClaims, err := h.tokenValidator.ValidateRefreshToken(
-		ctx, tokenRequest.RefreshToken, tokenRequest.ClientID)
+// resolveRefreshToken validates the presented refresh token and confirms it was issued to the
+// requesting client. ValidateRefreshToken enforces the RFC 7009 deny list, so a revoked token is
+// rejected as invalid_grant like any other invalid token and an unavailable deny list fails closed
+// with a server_error.
+func (h *refreshTokenGrantHandler) resolveRefreshToken(ctx context.Context,
+	tokenRequest *model.TokenRequest, logger *log.Logger) (
+	*tokenservice.RefreshTokenClaims, *model.ErrorResponse) {
+	refreshTokenClaims, err := h.tokenValidator.ValidateRefreshToken(ctx, tokenRequest.RefreshToken)
 	if err != nil {
 		logger.Debug(ctx, "Failed to validate refresh token", log.Error(err))
 		if errors.Is(err, revocation.ErrEnforcementUnavailable) {
@@ -127,6 +123,29 @@ func (h *refreshTokenGrantHandler) HandleGrant(ctx context.Context, tokenRequest
 			Error:            constants.ErrorInvalidGrant,
 			ErrorDescription: "Invalid refresh token",
 		}
+	}
+
+	// A client may only redeem refresh tokens issued to it.
+	if refreshTokenClaims.ClientID != tokenRequest.ClientID {
+		logger.Debug(ctx, "Refresh token does not belong to the requesting client")
+		return nil, &model.ErrorResponse{
+			Error:            constants.ErrorInvalidGrant,
+			ErrorDescription: "Invalid refresh token",
+		}
+	}
+
+	return refreshTokenClaims, nil
+}
+
+// HandleGrant processes the refresh token grant request and generates a new token response.
+func (h *refreshTokenGrantHandler) HandleGrant(ctx context.Context, tokenRequest *model.TokenRequest,
+	oauthApp *providers.OAuthClient) (
+	*model.TokenResponseDTO, *model.ErrorResponse) {
+	logger := log.GetLogger().With(log.String(log.LoggerKeyComponentName, "RefreshTokenGrantHandler"))
+
+	refreshTokenClaims, errResp := h.resolveRefreshToken(ctx, tokenRequest, logger)
+	if errResp != nil {
+		return nil, errResp
 	}
 
 	if errResp := dpop.VerifyProofBinding(ctx, refreshTokenClaims.DPoPJkt, "refresh token"); errResp != nil {

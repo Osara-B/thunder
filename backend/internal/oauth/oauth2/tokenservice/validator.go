@@ -33,7 +33,7 @@ const maxIDJAGJTILength = 256
 // yields revocation.ErrEnforcementUnavailable (fail-closed); callers discriminate via errors.Is.
 type TokenValidatorInterface interface {
 	ValidateAccessToken(ctx context.Context, token string) (*AccessTokenClaims, error)
-	ValidateRefreshToken(ctx context.Context, token string, clientID string) (*RefreshTokenClaims, error)
+	ValidateRefreshToken(ctx context.Context, token string) (*RefreshTokenClaims, error)
 	ValidateSubjectToken(ctx context.Context, token string, oauthApp *providers.OAuthClient) (
 		*SubjectTokenClaims, error)
 	// ValidateIDJAGSubjectToken validates a subject token for the ID-JAG issuance leg of token
@@ -44,12 +44,8 @@ type TokenValidatorInterface interface {
 	// refresh token into an ID-JAG.
 	ValidateIDJAGSubjectToken(ctx context.Context, token string, oauthApp *providers.OAuthClient) (
 		*SubjectTokenClaims, error)
-	// ValidateToken verifies a self-issued token's signature and enforces revocation without pinning
-	// its type, returning the raw claims. Used by token introspection, which is token-type agnostic.
-	ValidateToken(ctx context.Context, token string) (map[string]interface{}, error)
-	// ValidateIDJAGAssertion validates an ID-JAG assertion presented on the jwt-bearer grant,
-	// binding it to the authenticated client via its client_id claim.
-	ValidateIDJAGAssertion(ctx context.Context, assertion, clientID string) (*IDJAGAssertionClaims, error)
+	// ValidateIDJAGAssertion validates an ID-JAG assertion presented on the jwt-bearer grant.
+	ValidateIDJAGAssertion(ctx context.Context, assertion string) (*IDJAGAssertionClaims, error)
 }
 
 // TokenValidator implements TokenValidatorInterface.
@@ -144,9 +140,9 @@ func (tv *tokenValidator) ValidateAccessToken(ctx context.Context, token string)
 
 // ValidateRefreshToken validates a refresh token and extracts the claims.
 func (tv *tokenValidator) ValidateRefreshToken(
-	ctx context.Context, token string, clientID string,
+	ctx context.Context, token string,
 ) (*RefreshTokenClaims, error) {
-	if err := tv.jwtService.VerifyJWT(ctx, token, "", ""); err != nil {
+	if err := tv.jwtService.VerifyJWT(ctx, token, "", tv.cfg.JWT.Issuer); err != nil {
 		return nil, fmt.Errorf("invalid refresh token: %v", err.Error)
 	}
 
@@ -155,7 +151,8 @@ func (tv *tokenValidator) ValidateRefreshToken(
 		return nil, fmt.Errorf("failed to decode refresh token: %w", err)
 	}
 
-	if err := tv.validateOAuth2RefreshClaims(claims, clientID); err != nil {
+	clientID, err := tv.validateOAuth2RefreshClaims(claims)
+	if err != nil {
 		return nil, err
 	}
 
@@ -201,6 +198,8 @@ func (tv *tokenValidator) ValidateRefreshToken(
 	// Extract user type and organizational unit details if present
 	return &RefreshTokenClaims{
 		Sub:              sub,
+		ClientID:         clientID,
+		Claims:           claims,
 		Audiences:        audiences,
 		GrantType:        grantType,
 		Scopes:           scopes,
@@ -323,37 +322,14 @@ func (tv *tokenValidator) ValidateIDJAGSubjectToken(
 	return subjectClaims, nil
 }
 
-// ValidateToken verifies a self-issued token's signature (type-agnostic) and enforces the revocation
-// deny list, returning the raw claims. Token introspection uses this because it accepts both access
-// and refresh tokens and must not pin a token type.
-func (tv *tokenValidator) ValidateToken(ctx context.Context, token string) (map[string]interface{}, error) {
-	if err := tv.jwtService.VerifyJWT(ctx, token, "", ""); err != nil {
-		return nil, fmt.Errorf("token verification failed: %v", err.Error)
-	}
-
-	claims, err := jwt.DecodeJWTPayload(token)
-	if err != nil {
-		return nil, fmt.Errorf("failed to decode token payload: %w", err)
-	}
-
-	jti, _ := extractStringClaim(claims, constants.ClaimJTI)
-	tokenFamilyID, _ := extractStringClaim(claims, constants.ClaimTokenFamilyID)
-	if err := tv.ensureNotRevoked(ctx, revocationIdentity(claims, jti, tokenFamilyID)); err != nil {
-		return nil, err
-	}
-
-	return claims, nil
-}
-
 // ValidateIDJAGAssertion validates an ID-JAG assertion presented on the jwt-bearer grant
 // (draft-ietf-oauth-identity-assertion-authz-grant). It requires the oauth-id-jag+jwt typ header,
 // resolves the assertion's issuer to a trusted external IdP with ID-JAG enabled, verifies the
-// signature against that IdP's JWKS, validates the time claims, requires the audience to equal this
-// server's issuer, and binds the assertion to the authenticated client via the client_id claim.
+// signature against that IdP's JWKS, validates the time claims, and requires the audience to equal
+// this server's issuer.
 func (tv *tokenValidator) ValidateIDJAGAssertion(
 	ctx context.Context,
 	assertion string,
-	clientID string,
 ) (*IDJAGAssertionClaims, error) {
 	header, err := jwt.DecodeJWTHeader(assertion)
 	if err != nil {
@@ -411,12 +387,8 @@ func (tv *tokenValidator) ValidateIDJAGAssertion(
 			ErrAudienceNotAccepted, serverIssuer)
 	}
 
-	assertionClientID, err := extractStringClaim(claims, "client_id")
-	if err != nil {
+	if _, err := extractStringClaim(claims, "client_id"); err != nil {
 		return nil, fmt.Errorf("assertion is missing 'client_id' claim: %w", err)
-	}
-	if assertionClientID != clientID {
-		return nil, fmt.Errorf("assertion 'client_id' does not match the authenticated client")
 	}
 
 	sub, err := extractStringClaim(claims, "sub")
@@ -665,30 +637,28 @@ func (tv *tokenValidator) validateTimeClaims(claims map[string]interface{}) erro
 }
 
 // validateOAuth2RefreshClaims validates OAuth2-specific refresh token claims.
-func (tv *tokenValidator) validateOAuth2RefreshClaims(claims map[string]interface{}, clientID string) error {
-	sub, err := extractStringClaim(claims, "sub")
+// validateOAuth2RefreshClaims asserts the claim shape unique to a refresh token and returns the client
+// the token was issued to.
+func (tv *tokenValidator) validateOAuth2RefreshClaims(claims map[string]interface{}) (string, error) {
+	clientID, err := extractStringClaim(claims, "sub")
 	if err != nil {
-		return fmt.Errorf("missing or invalid 'sub' claim: %w", err)
-	}
-
-	if sub != clientID {
-		return fmt.Errorf("refresh token does not belong to the requesting client")
+		return "", fmt.Errorf("missing or invalid 'sub' claim: %w", err)
 	}
 
 	// Validate required refresh token claims
 	if _, err := extractStringClaim(claims, "access_token_sub"); err != nil {
-		return fmt.Errorf("missing or invalid 'access_token_sub' claim: %w", err)
+		return "", fmt.Errorf("missing or invalid 'access_token_sub' claim: %w", err)
 	}
 
 	if auds := extractStringSliceClaim(claims, "access_token_aud"); len(auds) == 0 {
-		return fmt.Errorf("missing or invalid 'access_token_aud' claim")
+		return "", fmt.Errorf("missing or invalid 'access_token_aud' claim")
 	}
 
 	if _, err := extractStringClaim(claims, "grant_type"); err != nil {
-		return fmt.Errorf("missing or invalid 'grant_type' claim: %w", err)
+		return "", fmt.Errorf("missing or invalid 'grant_type' claim: %w", err)
 	}
 
-	return nil
+	return clientID, nil
 }
 
 // isAuthAssertion determines if a JWT token is an auth assertion.

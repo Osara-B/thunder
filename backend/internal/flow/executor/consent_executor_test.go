@@ -567,23 +567,21 @@ func (suite *ConsentExecutorTestSuite) TestExecute_HasInputs_AllApproved_Success
 	assert.Contains(suite.T(), resp.RuntimeData[common.RuntimeKeyConsentedAttributes], "phone")
 }
 
-func (suite *ConsentExecutorTestSuite) TestExecute_HasInputs_HTMLEscapedJSON() {
-	// Simulate the HTML-escaped JSON that SanitizeStringMap would produce
+// Consent decisions arrive as a JSON string through SanitizeStringMap. HTML entities in a purpose
+// name must reach the enforcer verbatim; unescaping here would corrupt a legitimate "&amp;" value.
+func (suite *ConsentExecutorTestSuite) TestExecute_HasInputs_HTMLEntitiesPreserved() {
+	purposeName := `attributes:R&D <team> &amp; "core"`
 	decisions := providers.ConsentDecisions{
 		Approved: true,
 		Purposes: []providers.PurposeDecision{
-			{PurposeName: "attributes:test-app", Approved: true},
+			{PurposeName: purposeName, Approved: true},
 		},
 	}
-	decisionsJSON, _ := json.Marshal(decisions)
-	// HTML escape the JSON (simulates XSS sanitization)
-	escapedJSON := "&lt;script&gt;" // Won't appear in real flow, just to test unescape doesn't break
-	_ = escapedJSON
-	// Use actual HTML-escaped JSON with angle brackets in values
-	htmlEscaped := string(decisionsJSON) // Normal JSON shouldn't have HTML entities typically
+	decisionsJSON, err := json.Marshal(decisions)
+	assert.NoError(suite.T(), err)
 
 	ctx := buildConsentNodeContext()
-	ctx.UserInputs[userInputConsentDecisions] = htmlEscaped
+	ctx.UserInputs[userInputConsentDecisions] = string(decisionsJSON)
 	suite.setupDefaultAuthnProviderMocks()
 
 	suite.executor.Executor.(*coremock.ExecutorInterfaceMock).
@@ -596,14 +594,21 @@ func (suite *ConsentExecutorTestSuite) TestExecute_HasInputs_HTMLEscapedJSON() {
 		Purposes: []providers.ConsentPurposeItem{},
 	}
 
+	var recorded *providers.ConsentDecisions
 	suite.mockConsentEnforcer.On("RecordConsent", mock.Anything, mock.Anything, mock.Anything,
-		mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		mock.Anything, mock.AnythingOfType("*providers.ConsentDecisions"), mock.Anything,
+		mock.Anything, mock.Anything).
+		Run(func(args mock.Arguments) {
+			recorded = args.Get(4).(*providers.ConsentDecisions)
+		}).
 		Return(consentResult, nil)
 
-	resp, err := suite.executor.Execute(ctx)
+	resp, execErr := suite.executor.Execute(ctx)
 
-	assert.NoError(suite.T(), err)
+	assert.NoError(suite.T(), execErr)
 	assert.Equal(suite.T(), providers.ExecComplete, resp.Status)
+	assert.NotNil(suite.T(), recorded)
+	assert.Equal(suite.T(), purposeName, recorded.Purposes[0].PurposeName)
 }
 
 func (suite *ConsentExecutorTestSuite) TestExecute_HasInputs_EmptyDecisions() {
@@ -796,6 +801,204 @@ func (suite *ConsentExecutorTestSuite) TestExecute_HasInputs_UserDeniedReason_Is
 	// Unlike a timeout, an explicit denial is a user decision and must be persisted
 	assert.Equal(suite.T(), "consent-004", resp.RuntimeData[common.RuntimeKeyConsentID])
 	suite.mockConsentEnforcer.AssertCalled(suite.T(), "RecordConsent", mock.Anything, mock.Anything,
+		mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+}
+
+func (suite *ConsentExecutorTestSuite) TestExecute_HasInputs_FailOnDeny_UserDenied() {
+	decisions := providers.ConsentDecisions{
+		Approved: false,
+		Reason:   providers.ConsentDecisionReasonUserDenied,
+		Purposes: []providers.PurposeDecision{
+			{PurposeName: "attributes:test-app", Approved: false},
+		},
+	}
+	decisionsJSON, _ := json.Marshal(decisions)
+
+	ctx := buildConsentNodeContext()
+	ctx.UserInputs[userInputConsentDecisions] = string(decisionsJSON)
+	ctx.NodeProperties["failOnDeny"] = true
+	suite.setupDefaultAuthnProviderMocks()
+
+	suite.executor.Executor.(*coremock.ExecutorInterfaceMock).
+		On("ValidatePrerequisites", ctx, mock.AnythingOfType("*providers.ExecutorResponse"),
+			mock.Anything).Return(true)
+	suite.executor.Executor.(*coremock.ExecutorInterfaceMock).
+		On("HasRequiredInputs", ctx, mock.AnythingOfType("*providers.ExecutorResponse")).Return(true)
+
+	consentResult := &providers.Consent{
+		ID:       "consent-fod-1",
+		Purposes: []providers.ConsentPurposeItem{},
+	}
+	suite.mockConsentEnforcer.On("RecordConsent", mock.Anything, mock.Anything, mock.Anything,
+		mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(consentResult, nil)
+
+	resp, err := suite.executor.Execute(ctx)
+
+	assert.NoError(suite.T(), err)
+	assert.NotNil(suite.T(), resp)
+	assert.Equal(suite.T(), providers.ExecFailure, resp.Status)
+	assert.Equal(suite.T(), ErrConsentDenied.Code, resp.Error.Code)
+
+	// The failure branch must not populate downstream runtime data
+	assert.Empty(suite.T(), resp.RuntimeData[common.RuntimeKeyConsentID])
+	_, hasAttrs := resp.RuntimeData[common.RuntimeKeyConsentedAttributes]
+	assert.False(suite.T(), hasAttrs)
+	_, hasPerms := resp.RuntimeData[common.RuntimeKeyConsentedPermissions]
+	assert.False(suite.T(), hasPerms)
+
+	// The consent record is still persisted before failing the flow
+	suite.mockConsentEnforcer.AssertCalled(suite.T(), "RecordConsent", mock.Anything, mock.Anything,
+		mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+}
+
+func (suite *ConsentExecutorTestSuite) TestExecute_HasInputs_FailOnDeny_UserApprovedWithOptionalToggledOff() {
+	decisions := providers.ConsentDecisions{
+		Approved: true,
+		Purposes: []providers.PurposeDecision{
+			{
+				PurposeName: "attributes:test-app",
+				Approved:    true,
+				Elements: []providers.ElementDecision{
+					{Name: "phone", Approved: false}, // Optional element toggled off, but user clicked Allow
+				},
+			},
+		},
+	}
+	decisionsJSON, _ := json.Marshal(decisions)
+
+	ctx := buildConsentNodeContext()
+	ctx.UserInputs[userInputConsentDecisions] = string(decisionsJSON)
+	ctx.NodeProperties["failOnDeny"] = true
+	suite.setupDefaultAuthnProviderMocks()
+
+	suite.executor.Executor.(*coremock.ExecutorInterfaceMock).
+		On("ValidatePrerequisites", ctx, mock.AnythingOfType("*providers.ExecutorResponse"),
+			mock.Anything).Return(true)
+	suite.executor.Executor.(*coremock.ExecutorInterfaceMock).
+		On("HasRequiredInputs", ctx, mock.AnythingOfType("*providers.ExecutorResponse")).Return(true)
+
+	consentResult := &providers.Consent{
+		ID:       "consent-fod-2",
+		Purposes: []providers.ConsentPurposeItem{},
+	}
+	suite.mockConsentEnforcer.On("RecordConsent", mock.Anything, mock.Anything, mock.Anything,
+		mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(consentResult, nil)
+
+	resp, err := suite.executor.Execute(ctx)
+
+	assert.NoError(suite.T(), err)
+	assert.Equal(suite.T(), providers.ExecComplete, resp.Status)
+	assert.Equal(suite.T(), "consent-fod-2", resp.RuntimeData[common.RuntimeKeyConsentID])
+}
+
+func (suite *ConsentExecutorTestSuite) TestExecute_HasInputs_FailOnDeny_Disabled_UserDeniedSucceeds() {
+	decisions := providers.ConsentDecisions{
+		Approved: false,
+		Reason:   providers.ConsentDecisionReasonUserDenied,
+		Purposes: []providers.PurposeDecision{
+			{PurposeName: "attributes:test-app", Approved: false},
+		},
+	}
+	decisionsJSON, _ := json.Marshal(decisions)
+
+	ctx := buildConsentNodeContext()
+	ctx.UserInputs[userInputConsentDecisions] = string(decisionsJSON)
+	// failOnDeny not set, mirroring the current default behavior
+	suite.setupDefaultAuthnProviderMocks()
+
+	suite.executor.Executor.(*coremock.ExecutorInterfaceMock).
+		On("ValidatePrerequisites", ctx, mock.AnythingOfType("*providers.ExecutorResponse"),
+			mock.Anything).Return(true)
+	suite.executor.Executor.(*coremock.ExecutorInterfaceMock).
+		On("HasRequiredInputs", ctx, mock.AnythingOfType("*providers.ExecutorResponse")).Return(true)
+
+	consentResult := &providers.Consent{
+		ID:       "consent-fod-3",
+		Purposes: []providers.ConsentPurposeItem{},
+	}
+	suite.mockConsentEnforcer.On("RecordConsent", mock.Anything, mock.Anything, mock.Anything,
+		mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return(consentResult, nil)
+
+	resp, err := suite.executor.Execute(ctx)
+
+	assert.NoError(suite.T(), err)
+	assert.Equal(suite.T(), providers.ExecComplete, resp.Status)
+	assert.Equal(suite.T(), "consent-fod-3", resp.RuntimeData[common.RuntimeKeyConsentID])
+}
+
+func (suite *ConsentExecutorTestSuite) TestExecute_HasInputs_FailOnDeny_EssentialDeniedStillFails() {
+	decisions := providers.ConsentDecisions{
+		Approved: true,
+		Purposes: []providers.PurposeDecision{
+			{
+				PurposeName: "attributes:test-app",
+				Approved:    true,
+				Elements: []providers.ElementDecision{
+					{Name: "email", Approved: false},
+				},
+			},
+		},
+	}
+	decisionsJSON, _ := json.Marshal(decisions)
+
+	ctx := buildConsentNodeContext()
+	ctx.UserInputs[userInputConsentDecisions] = string(decisionsJSON)
+	ctx.NodeProperties["failOnDeny"] = true
+	suite.setupDefaultAuthnProviderMocks()
+
+	suite.executor.Executor.(*coremock.ExecutorInterfaceMock).
+		On("ValidatePrerequisites", ctx, mock.AnythingOfType("*providers.ExecutorResponse"),
+			mock.Anything).Return(true)
+	suite.executor.Executor.(*coremock.ExecutorInterfaceMock).
+		On("HasRequiredInputs", ctx, mock.AnythingOfType("*providers.ExecutorResponse")).Return(true)
+
+	// The essential-denied branch runs before the failOnDeny check
+	suite.mockConsentEnforcer.On("RecordConsent", mock.Anything, mock.Anything, mock.Anything,
+		mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return((*providers.Consent)(nil), &consentauthn.ErrorEssentialConsentDenied)
+
+	resp, err := suite.executor.Execute(ctx)
+
+	assert.NoError(suite.T(), err)
+	assert.Equal(suite.T(), providers.ExecFailure, resp.Status)
+	assert.Equal(suite.T(), ErrConsentDenied.Code, resp.Error.Code)
+}
+
+func (suite *ConsentExecutorTestSuite) TestExecute_HasInputs_FailOnDeny_TimeoutReasonFailsFlow() {
+	decisions := providers.ConsentDecisions{
+		Approved: false,
+		Reason:   providers.ConsentDecisionReasonTimeout,
+		Purposes: []providers.PurposeDecision{
+			{PurposeName: "attributes:test-app", Approved: false},
+		},
+	}
+	decisionsJSON, _ := json.Marshal(decisions)
+
+	ctx := buildConsentNodeContext()
+	ctx.UserInputs[userInputConsentDecisions] = string(decisionsJSON)
+	ctx.NodeProperties["failOnDeny"] = true
+
+	pastExpiry := strconv.FormatInt(time.Now().Add(-1*time.Minute).UnixMilli(), 10)
+	ctx.RuntimeData[common.RuntimeKeyStepTimeout] = pastExpiry
+	suite.setupDefaultAuthnProviderMocks()
+
+	suite.executor.Executor.(*coremock.ExecutorInterfaceMock).
+		On("ValidatePrerequisites", ctx, mock.AnythingOfType("*providers.ExecutorResponse"),
+			mock.Anything).Return(true)
+	suite.executor.Executor.(*coremock.ExecutorInterfaceMock).
+		On("HasRequiredInputs", ctx, mock.AnythingOfType("*providers.ExecutorResponse")).Return(true)
+
+	resp, err := suite.executor.Execute(ctx)
+
+	assert.NoError(suite.T(), err)
+	assert.Equal(suite.T(), providers.ExecFailure, resp.Status)
+	assert.Equal(suite.T(), ErrConsentPromptTimedOut.Code, resp.Error.Code)
+
+	// A timed-out prompt is not a user decision, so nothing must be recorded even when failing
+	suite.mockConsentEnforcer.AssertNotCalled(suite.T(), "RecordConsent", mock.Anything, mock.Anything,
 		mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 }
 

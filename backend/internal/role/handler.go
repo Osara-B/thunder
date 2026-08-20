@@ -462,6 +462,10 @@ func (rh *roleHandler) toHTTPCreateRoleResponse(role *RoleWithPermissionsAndAssi
 			Type: sa.Type,
 		}
 	}
+	permissions := role.Permissions
+	if permissions == nil {
+		permissions = make([]ResourcePermissions, 0)
+	}
 
 	return &CreateRoleResponse{
 		ID:          role.ID,
@@ -469,7 +473,7 @@ func (rh *roleHandler) toHTTPCreateRoleResponse(role *RoleWithPermissionsAndAssi
 		Description: role.Description,
 		OUID:        role.OUID,
 		OUHandle:    role.OUHandle,
-		Permissions: role.Permissions,
+		Permissions: permissions,
 		Assignments: httpAssignments,
 	}
 }

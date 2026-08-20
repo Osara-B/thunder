@@ -3327,7 +3327,7 @@ func TestAcrValidationTestSuite(t *testing.T) {
 func (s *AcrValidationTestSuite) initRegistry(mapping engineconfig.AuthClassConfig) {
 	config.ResetServerRuntime()
 	s.Require().NoError(config.InitializeServerRuntime("", &config.Config{
-		OAuth: engineconfig.OAuthConfig{
+		OAuth: config.OAuthConfig{
 			AuthClass: mapping,
 		},
 	}))

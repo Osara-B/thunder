@@ -28,14 +28,21 @@ import (
 
 type CompositeModeSuite struct {
 	suite.Suite
-	createdResources map[string][]string
+	createdResources  map[string][]string
+	agentTypeSnapshot *testutils.AgentTypeSnapshot
 }
 
 func (suite *CompositeModeSuite) SetupSuite() {
 	suite.createdResources = make(map[string][]string)
 
+	// The "default" agent type is a singleton shared with every other suite. Snapshot it before
+	// pointing it at the declarative OU, so teardown can put it back.
+	snapshot, err := testutils.SnapshotAgentType()
+	suite.Require().NoError(err, "Failed to snapshot the default agent type")
+	suite.agentTypeSnapshot = snapshot
+
 	// Ensure the singleton "default" agent type exists so composite agent tests can create runtime agents.
-	_, err := testutils.CreateAgentType(testutils.UserType{
+	_, err = testutils.CreateAgentType(testutils.UserType{
 		Name:   "default",
 		OUID:   "decl-ou-1",
 		Schema: map[string]interface{}{"description": map[string]interface{}{"type": "string"}},
@@ -44,6 +51,13 @@ func (suite *CompositeModeSuite) SetupSuite() {
 }
 
 func (suite *CompositeModeSuite) TearDownSuite() {
+	// Restore the shared agent type before deleting any runtime resources it may reference.
+	if suite.agentTypeSnapshot != nil {
+		if err := testutils.RestoreAgentType(suite.agentTypeSnapshot); err != nil {
+			suite.T().Errorf("teardown: failed to restore the default agent type: %v", err)
+		}
+	}
+
 	// Delete only runtime resources (not declarative)
 	for module, ids := range suite.createdResources {
 		for _, id := range ids {
@@ -1106,6 +1120,24 @@ func (suite *CompositeModeSuite) TestAgentDeclarativeUpdateReject() {
 
 	errCode := suite.extractErrorCode(resp)
 	suite.Equal("AGT-1027", errCode, "error code should be AGT-1027 for immutable agent")
+
+	// The rejection must leave nothing behind. The payload above renames the agent and omits
+	// attributes, and omitting attributes on a successful update clears them, so a partially
+	// applied write would show up either as the new name or as emptied attributes.
+	getResp, err := client.Get(fmt.Sprintf("%s/agents/decl-agent-1", testutils.TestServerURL))
+	suite.Require().NoError(err)
+	defer getResp.Body.Close()
+	suite.Require().Equal(http.StatusOK, getResp.StatusCode, "declarative agent should still be readable")
+
+	var stored map[string]interface{}
+	suite.Require().NoError(json.NewDecoder(getResp.Body).Decode(&stored))
+
+	suite.Equal("Declarative Test Agent", stored["name"], "rejected update must not rename the agent")
+
+	attributes, ok := stored["attributes"].(map[string]interface{})
+	suite.Require().True(ok, "declarative agent should still carry its attributes: %v", stored)
+	suite.Equal("engineering", attributes["department"],
+		"rejected update must not clear attributes the payload omitted")
 }
 
 func (suite *CompositeModeSuite) TestAgentDeclarativeDeleteReject() {
