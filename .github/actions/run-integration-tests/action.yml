@@ -8,23 +8,31 @@ inputs:
     description: 'Whether to enable coverage collection'
     required: false
     default: false
-  ref:
-    description: 'Branch, tag or SHA to check out the test sources from. Defaults to the ref that triggered the workflow.'
-    required: false
-    default: ''
 
+# Callers must check out the test sources before using this action. It must never
+# check out a ref of its own: that would replace the workspace mid-job and split the
+# job across two commits.
 runs:
   using: "composite"
   steps:
-    - name: 📥 Checkout Code
-      uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-      with:
-        ref: ${{ inputs.ref }}
-
     - name: ⚙️ Set up Go Environment
       uses: ./.github/actions/setup-go
 
+    # A caller that needs to inspect the distribution before the tests run stages it
+    # itself; downloading it a second time into the same path would be redundant.
+    - name: 🔍 Check for a Staged Distribution
+      id: staged_distribution
+      shell: bash
+      run: |
+        if ls target/dist/*.zip >/dev/null 2>&1; then
+          echo "✅ Using the distribution already staged in target/dist"
+          echo "present=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "present=false" >> "$GITHUB_OUTPUT"
+        fi
+
     - name: 📥 Download Built Distribution
+      if: steps.staged_distribution.outputs.present != 'true'
       uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
       with:
         name: product-distribution
