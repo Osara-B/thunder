@@ -2352,6 +2352,36 @@ func TestImportResources_KeepsClientSecretForConfidentialClient(t *testing.T) {
 	assert.Equal(t, statusSuccess, resp.Results[0].Status)
 }
 
+func TestImportResources_CarriesOAuthTokenBindingFlags(t *testing.T) {
+	content := strings.Join([]string{
+		"resource_type: application",
+		"id: app-1",
+		"name: My App",
+		"authFlowId: flow-1",
+		"inboundAuthConfig:",
+		"  - type: oauth2",
+		"    config:",
+		"      clientId: app-client",
+		"      clientSecret: keep-me",
+		"      grantTypes:",
+		"        - authorization_code",
+		"      tokenEndpointAuthMethod: client_secret_basic",
+		"      dpopBoundAccessTokens: true",
+		"      includeActClaim: true",
+		"",
+	}, "\n")
+	appSvc, resp, err := runOAuthClientSecretImport(t, content)
+
+	require.Nil(t, err)
+	require.NotNil(t, resp)
+	require.Len(t, appSvc.created, 1)
+	require.Len(t, appSvc.created[0].InboundAuthConfig, 1)
+	require.NotNil(t, appSvc.created[0].InboundAuthConfig[0].OAuthConfig)
+	assert.True(t, appSvc.created[0].InboundAuthConfig[0].OAuthConfig.DPoPBoundAccessTokens)
+	assert.True(t, appSvc.created[0].InboundAuthConfig[0].OAuthConfig.IncludeActClaim)
+	assert.Equal(t, statusSuccess, resp.Results[0].Status)
+}
+
 func TestOrderDocumentsByDependencies(t *testing.T) {
 	docs := []parsedDocument{
 		{ResourceType: resourceTypeApplication, Sequence: 2},

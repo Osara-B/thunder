@@ -1121,6 +1121,7 @@ const translations = {
     'edit.page.errorTitle': 'Failed to load agent',
     'edit.page.notFound': 'Agent not found',
     'edit.page.back': 'Back to agents',
+    'edit.page.logoUpdate.label': 'Update Logo',
     'edit.page.description.empty': 'No description',
     'edit.page.description.placeholder': 'Add a description',
     'edit.page.tabs.overview': 'Overview',

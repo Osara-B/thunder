@@ -1,30 +1,32 @@
-# This workflow merges release back into main after a successful release run.
+# This workflow merges the selected branch, 'release' by default, back into main.
+# Started manually from the Actions tab.
 # If there are no conflicts, it commits directly to main.
 # If there are conflicts, it creates a sync PR for manual resolution.
-# Can also be started manually from the Actions tab.
 
 name: 🔁 Post-Release Sync
 
 on:
   workflow_dispatch:
-  workflow_run:
-    workflows: ["🚀 Release Builder"]
-    types: [completed]
+    inputs:
+      branch:
+        description: 'Branch to merge into main'
+        required: false
+        type: string
+        default: 'release'
 
 permissions:
   contents: write
   pull-requests: write
 
 env:
-  SOURCE_BRANCH: "release"
+  SOURCE_BRANCH: ${{ inputs.branch || 'release' }}
   TARGET_BRANCH: "main"
   RELEASE_GIT_USER_NAME: "thunderid-automation-bot"
   RELEASE_GIT_USER_EMAIL: "thunderid-bot@thunderid.dev"
 
 jobs:
-  sync-release-to-main:
-    name: 🔀 Sync release -> main
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+  sync-to-main:
+    name: 🔀 Sync to main
     runs-on: ubuntu-latest
     steps:
       - name: 📥 Checkout Target Branch
@@ -39,7 +41,7 @@ jobs:
           git config --local user.name "${{ env.RELEASE_GIT_USER_NAME }}"
           git config --local user.email "${{ env.RELEASE_GIT_USER_EMAIL }}"
 
-      - name: 🔄 Merge Release Branch into Main
+      - name: 🔄 Merge Source Branch into Main
         id: merge_sync
         run: |
           set -euo pipefail
@@ -79,9 +81,7 @@ jobs:
             const headBranch = process.env.SOURCE_BRANCH;
             const head = `${owner}:${headBranch}`;
             const runUrl = `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`;
-            const triggerLine = context.eventName === 'workflow_dispatch'
-              ? `Triggered manually from Actions: ${runUrl}`
-              : `Triggered after successful release workflow run: ${context.payload.workflow_run.html_url}`;
+            const triggerLine = `Triggered manually from Actions: ${runUrl}`;
 
             const existing = await github.rest.pulls.list({
               owner,
