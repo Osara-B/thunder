@@ -1,5 +1,9 @@
 # <FEATURE> Specification
 
+- **Status:** Draft
+- **Version:** 0.1
+- **Related documents:** <ISSUES, PROTOCOLS, THREAT MODEL, OR OTHER REFERENCES>
+
 <Summary, Architecture, Detailed design, Requirements and acceptance criteria, and Change log are
 required. Open questions and the subsections under Detailed design are conditional. Omit conditional
 sections that do not apply. Remove all template instructions before the specification is accepted.>
