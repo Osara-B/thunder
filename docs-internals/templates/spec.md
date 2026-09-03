@@ -48,7 +48,7 @@ or organization-level. Omit this subsection when the feature has no configuratio
 
 <Every requirement and acceptance criterion below must be covered by the preceding design. Do not keep a
 requirement that is deferred or partially covered. Move unsupported requirements to a future
-specification. Use stable requirement and acceptance-criterion IDs.>
+specification.>
 
 ### R1. <REQUIREMENT TITLE>
 
