@@ -214,6 +214,16 @@ overrides:
   # GHSA-3rrr-jr9j-h3q3 (prototype pollution in architecture diagrams), and GHSA XY chart
   # infinite-loop DoS. Transitive via @docusaurus/theme-mermaid.
   mermaid: '>=11.16.1'
+  # JUSTIFICATION: Fixes GHSA-5jgf-p345-68v8 (host confusion via skipped IDN canonicalization on
+  # scheme-relative references), GHSA-f65p-4m7j-42xc (SSRF via malformed IPv6 normalization),
+  # GHSA-fph4-wmhf-6fwf (SSRF via repeated hostname percent-decoding) and GHSA-jqff-g426-hqxp
+  # (host confusion via percent-encoded scheme normalization). Transitive via the Docusaurus
+  # webpack -> schema-utils -> ajv chain (100+ paths), so overridden globally. Constrained to the
+  # 3.x line: the consumers here (ajv) declare fast-uri ^3.0.1, and an open-ended '>=3.1.6' lets
+  # the resolver dedupe this edge onto the 4.x major, which those consumers were never tested
+  # against. 3.1.6 is a patch release on the 3.1.x line already resolved here (3.1.5), so no API
+  # change.
+  fast-uri: '>=3.1.6 <4'
 
 packageExtensions:
   '@hookform/resolvers':
@@ -239,6 +249,20 @@ auditConfig:
     # mdx-loader. No patched release exists on npm yet (advisory lists "Patched: None"); revisit
     # and add an override once image-size ships a fix.
     - GHSA-5p2g-fcmc-qvqq
+    # JUSTIFICATION: GHSA-qxc2-j82w-r537 — arbitrary code execution via faker's `helpers.fake`.
+    # Transitive via docs -> openapi-to-postmanv2 -> postman-collection, which depends on the
+    # deprecated @faker-js/faker@5.5.3. Not overridable: the fix landed in faker 10.5.0 (the
+    # advisory names 10.4.1, which was never published to npm), and faker 8 renamed the modules
+    # postman-collection binds at require time (`faker.address.*` -> `faker.location.*`). Forcing
+    # any >=8 release makes postman-collection throw on import, breaking
+    # `pnpm --dir docs generate:postman-collections`. Upstream has not migrated — the latest
+    # postman-collection (5.3.1) still pins 5.5.3 — so there is no upgrade path today.
+    # Not exploitable here: the advisory requires attacker-controlled input reaching
+    # `helpers.fake`, and postman-collection never calls it (it only binds individual generators
+    # such as `faker.address.city` for dynamic-variable substitution). The code is also
+    # build-time only, run against this repo's own OpenAPI specs. Revisit once postman-collection
+    # upgrades its faker dependency.
+    - GHSA-qxc2-j82w-r537
 
 minimumReleaseAgeExclude:
   - '@thunderid/*'
