@@ -41,16 +41,6 @@ jobs:
       - name: ⚙️ Set up Go Environment
         uses: ./.github/actions/setup-go
 
-      - name: 🗄️ Cache Go Modules
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
-          key: ${{ runner.os }}-go-modules-${{ hashFiles('**/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-go-modules-
-
       - name: 🔨 Build product for All Platforms
         uses: ./.github/actions/build-multiplatform
 
