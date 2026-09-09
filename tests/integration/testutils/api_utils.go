@@ -663,6 +663,11 @@ func CreateApplication(app Application) (string, error) {
 		appData["allowedUserTypes"] = app.AllowedUserTypes
 	}
 
+	// Add allowed_agent_types if provided
+	if len(app.AllowedAgentTypes) > 0 {
+		appData["allowedAgentTypes"] = app.AllowedAgentTypes
+	}
+
 	// Add subject attribute mapping if provided
 	if len(app.SubjectAttribute) > 0 {
 		appData["subjectAttribute"] = app.SubjectAttribute
