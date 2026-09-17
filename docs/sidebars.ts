@@ -247,6 +247,7 @@ const sidebars: SidebarsConfig = {
                   items: [
                     {type: 'doc', id: 'use-cases/ai-agents/solve-playground', label: 'Set Up the Playground'},
                     {type: 'doc', id: 'use-cases/ai-agents/solve-identity', label: 'Give the Agent an Identity'},
+                    {type: 'doc', id: 'use-cases/ai-agents/solve-sign-in', label: 'Authenticate the Agent'},
                     {type: 'doc', id: 'use-cases/ai-agents/solve-credentials', label: 'Protect Its Credential'},
                     {type: 'doc', id: 'use-cases/ai-agents/solve-access', label: 'What the Agent May Do'},
                     {type: 'doc', id: 'use-cases/ai-agents/solve-acts-for-user', label: 'Act for a User'},
@@ -495,6 +496,11 @@ const sidebars: SidebarsConfig = {
                 },
                 {
                   type: 'doc',
+                  id: 'guides/agents/authentication/agent-sign-in',
+                  label: 'Agent Sign-In',
+                },
+                {
+                  type: 'doc',
                   id: 'guides/agents/authentication/on-behalf-of-user',
                   label: 'On Behalf of a User',
                 },
@@ -656,6 +662,30 @@ const sidebars: SidebarsConfig = {
                 {type: 'doc', id: 'guides/integrations/apim-gateways/envoy', label: 'Envoy'},
                 {type: 'doc', id: 'guides/integrations/apim-gateways/kong', label: 'Kong Konnect'},
                 {type: 'doc', id: 'guides/integrations/apim-gateways/krakend', label: 'KrakenD'},
+              ],
+            },
+            {
+              type: 'category',
+              label: 'Workload Identity Federation',
+              collapsed: true,
+              collapsible: true,
+              items: [
+                {
+                  type: 'doc',
+                  id: 'guides/integrations/workload-identity-federation/overview',
+                  label: 'Overview',
+                  key: 'wif-overview',
+                },
+                {
+                  type: 'doc',
+                  id: 'guides/integrations/workload-identity-federation/openai',
+                  label: 'OpenAI',
+                },
+                {
+                  type: 'doc',
+                  id: 'guides/integrations/workload-identity-federation/claude',
+                  label: 'Claude',
+                },
               ],
             },
           ],

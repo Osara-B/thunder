@@ -402,6 +402,11 @@
                     },
                     {
                       "type": "doc",
+                      "id": "use-cases/ai-agents/solve-sign-in",
+                      "label": "Authenticate the Agent"
+                    },
+                    {
+                      "type": "doc",
                       "id": "use-cases/ai-agents/solve-credentials",
                       "label": "Protect Its Credential"
                     },
@@ -751,6 +756,11 @@
                 },
                 {
                   "type": "doc",
+                  "id": "guides/agents/authentication/agent-sign-in",
+                  "label": "Agent Sign-In"
+                },
+                {
+                  "type": "doc",
                   "id": "guides/agents/authentication/on-behalf-of-user",
                   "label": "On Behalf of a User"
                 },
@@ -935,6 +945,30 @@
                   "type": "doc",
                   "id": "guides/integrations/apim-gateways/krakend",
                   "label": "KrakenD"
+                }
+              ]
+            },
+            {
+              "type": "category",
+              "label": "Workload Identity Federation",
+              "collapsed": true,
+              "collapsible": true,
+              "items": [
+                {
+                  "type": "doc",
+                  "id": "guides/integrations/workload-identity-federation/overview",
+                  "label": "Overview",
+                  "key": "wif-overview"
+                },
+                {
+                  "type": "doc",
+                  "id": "guides/integrations/workload-identity-federation/openai",
+                  "label": "OpenAI"
+                },
+                {
+                  "type": "doc",
+                  "id": "guides/integrations/workload-identity-federation/claude",
+                  "label": "Claude"
                 }
               ]
             }
@@ -1828,6 +1862,11 @@
                   "type": "doc",
                   "id": "sdks/react/apis/components/user",
                   "label": "<User />"
+                },
+                {
+                  "type": "doc",
+                  "id": "sdks/react/apis/components/change-credential",
+                  "label": "<ChangeCredential />"
                 }
               ]
             }
@@ -2108,6 +2147,11 @@
                   "type": "doc",
                   "id": "sdks/vue/apis/components/user",
                   "label": "<User />"
+                },
+                {
+                  "type": "doc",
+                  "id": "sdks/vue/apis/components/change-credential",
+                  "label": "<ChangeCredential />"
                 }
               ]
             }
@@ -2187,6 +2231,53 @@
           "type": "doc",
           "id": "sdks/browser/apis/hooks",
           "label": "Event Hooks"
+        },
+        {
+          "type": "category",
+          "label": "Utilities",
+          "collapsed": true,
+          "items": [
+            {
+              "type": "doc",
+              "id": "sdks/browser/apis/utilities/update-me-credentials",
+              "label": "updateMeCredentials()"
+            },
+            {
+              "type": "doc",
+              "id": "sdks/browser/apis/utilities/evaluate-password-policy",
+              "label": "evaluatePasswordPolicy()"
+            },
+            {
+              "type": "doc",
+              "id": "sdks/browser/apis/utilities/evaluate-change-password-form",
+              "label": "evaluateChangePasswordForm()"
+            },
+            {
+              "type": "doc",
+              "id": "sdks/browser/apis/utilities/resolve-change-credential-policy",
+              "label": "resolveChangeCredentialPolicy()"
+            },
+            {
+              "type": "doc",
+              "id": "sdks/browser/apis/utilities/supports-credential",
+              "label": "supportsCredential()"
+            },
+            {
+              "type": "doc",
+              "id": "sdks/browser/apis/utilities/map-credential-update-error",
+              "label": "mapCredentialUpdateError()"
+            },
+            {
+              "type": "doc",
+              "id": "sdks/browser/apis/utilities/credential-constants",
+              "label": "CredentialConstants"
+            },
+            {
+              "type": "doc",
+              "id": "sdks/browser/apis/utilities/create-http-client-fetcher",
+              "label": "createHttpClientFetcher()"
+            }
+          ]
         }
       ]
     },
@@ -2453,6 +2544,11 @@
       "items": [
         {
           "type": "doc",
+          "id": "sdks/ios/guides/try-the-sample-app",
+          "label": "Try the Sample App"
+        },
+        {
+          "type": "doc",
           "id": "sdks/ios/guides/accessing-protected-apis",
           "label": "Accessing Protected APIs"
         }
@@ -2537,6 +2633,11 @@
       "items": [
         {
           "type": "doc",
+          "id": "sdks/android/guides/try-the-sample-app",
+          "label": "Try the Sample App"
+        },
+        {
+          "type": "doc",
           "id": "sdks/android/guides/accessing-protected-apis",
           "label": "Accessing Protected APIs"
         }
@@ -2619,6 +2720,11 @@
       "collapsed": false,
       "className": "sidebar-section-icon-guides",
       "items": [
+        {
+          "type": "doc",
+          "id": "sdks/flutter/guides/try-the-sample-app",
+          "label": "Try the Sample App"
+        },
         {
           "type": "doc",
           "id": "sdks/flutter/guides/accessing-protected-apis",
