@@ -22,6 +22,7 @@ import (
 	flowmgt "github.com/thunder-id/thunderid/internal/flow/mgt"
 	"github.com/thunder-id/thunderid/internal/group"
 	ncommon "github.com/thunder-id/thunderid/internal/notification/common"
+	"github.com/thunder-id/thunderid/internal/ou"
 	"github.com/thunder-id/thunderid/internal/resource"
 	"github.com/thunder-id/thunderid/internal/role"
 	"github.com/thunder-id/thunderid/internal/system/log"
@@ -78,17 +79,17 @@ type flowAdapter interface {
 }
 
 type ouAdapter interface {
-	CreateOrganizationUnit(ctx context.Context, request providers.OrganizationUnitRequestWithID) (
-		providers.OrganizationUnit,
+	CreateOrganizationUnit(ctx context.Context, request ou.OrganizationUnitRequestWithID) (
+		ou.OrganizationUnit,
 		*tidcommon.ServiceError,
 	)
-	GetOrganizationUnit(ctx context.Context, id string) (providers.OrganizationUnit, *tidcommon.ServiceError)
+	GetOrganizationUnit(ctx context.Context, id string) (ou.OrganizationUnit, *tidcommon.ServiceError)
 	GetOrganizationUnitByPath(ctx context.Context, handlePath string) (
-		providers.OrganizationUnit,
+		ou.OrganizationUnit,
 		*tidcommon.ServiceError,
 	)
-	UpdateOrganizationUnit(ctx context.Context, id string, request providers.OrganizationUnitRequestWithID) (
-		providers.OrganizationUnit,
+	UpdateOrganizationUnit(ctx context.Context, id string, request ou.OrganizationUnitRequestWithID) (
+		ou.OrganizationUnit,
 		*tidcommon.ServiceError)
 }
 

@@ -127,7 +127,7 @@ func (suite *AgentServiceTestSuite) setupService() (
 	mockOU.On("IsOrganizationUnitExists", mock.Anything, mock.Anything).
 		Maybe().Return(true, (*tidcommon.ServiceError)(nil))
 	mockOU.On("GetOrganizationUnitByPath", mock.Anything, mock.Anything).
-		Maybe().Return(providers.OrganizationUnit{ID: testOUID}, (*tidcommon.ServiceError)(nil))
+		Maybe().Return(oupkg.OrganizationUnit{ID: testOUID}, (*tidcommon.ServiceError)(nil))
 	mockOU.On("GetOrganizationUnitHandlesByIDs", mock.Anything, mock.Anything).
 		Maybe().Return(map[string]string{}, (*tidcommon.ServiceError)(nil))
 
@@ -2015,7 +2015,7 @@ func (suite *AgentServiceTestSuite) TestUpdateAgent_OUHandleResolution() {
 	newOUID := "new-ou-id"
 	clearMockCalls(mockOU, "GetOrganizationUnitByPath")
 	mockOU.On("GetOrganizationUnitByPath", mock.Anything, "new-handle").
-		Return(providers.OrganizationUnit{ID: newOUID}, (*tidcommon.ServiceError)(nil))
+		Return(oupkg.OrganizationUnit{ID: newOUID}, (*tidcommon.ServiceError)(nil))
 
 	resp, svcErr := svc.UpdateAgent(context.Background(), testAgentID, &model.UpdateAgentRequest{
 		Name: testAgentName, Type: testAgentType, OUHandle: "new-handle",
@@ -2456,7 +2456,7 @@ func (suite *AgentServiceTestSuite) TestValidateAgent_OUHandleNotFound() {
 	notFound := &oupkg.ErrorOrganizationUnitNotFound
 	clearMockCalls(mockOU, "GetOrganizationUnitByPath")
 	mockOU.On("GetOrganizationUnitByPath", mock.Anything, "missing-handle").
-		Return(providers.OrganizationUnit{}, notFound)
+		Return(oupkg.OrganizationUnit{}, notFound)
 
 	req := &providers.Agent{
 		Name: testAgentName, Type: testAgentType, OUHandle: "missing-handle",
@@ -2472,7 +2472,7 @@ func (suite *AgentServiceTestSuite) TestValidateAgent_OUHandleInternalError() {
 	internalErr := &tidcommon.ServiceError{Code: "SOME_OTHER_ERROR"}
 	clearMockCalls(mockOU, "GetOrganizationUnitByPath")
 	mockOU.On("GetOrganizationUnitByPath", mock.Anything, "bad-handle").
-		Return(providers.OrganizationUnit{}, internalErr)
+		Return(oupkg.OrganizationUnit{}, internalErr)
 
 	req := &providers.Agent{
 		Name: testAgentName, Type: testAgentType, OUHandle: "bad-handle",
@@ -2494,7 +2494,7 @@ func (suite *AgentServiceTestSuite) TestUpdateAgent_OUHandleResolution_OUNotFoun
 	notFound := &oupkg.ErrorOrganizationUnitNotFound
 	clearMockCalls(mockOU, "GetOrganizationUnitByPath")
 	mockOU.On("GetOrganizationUnitByPath", mock.Anything, "missing-handle").
-		Return(providers.OrganizationUnit{}, notFound)
+		Return(oupkg.OrganizationUnit{}, notFound)
 
 	resp, svcErr := svc.UpdateAgent(context.Background(), testAgentID, &model.UpdateAgentRequest{
 		Name: testAgentName, Type: testAgentType, OUHandle: "missing-handle",
@@ -2514,7 +2514,7 @@ func (suite *AgentServiceTestSuite) TestUpdateAgent_OUHandleResolution_InternalE
 	internalErr := &tidcommon.ServiceError{Code: "SOME_OTHER_ERROR"}
 	clearMockCalls(mockOU, "GetOrganizationUnitByPath")
 	mockOU.On("GetOrganizationUnitByPath", mock.Anything, "bad-handle").
-		Return(providers.OrganizationUnit{}, internalErr)
+		Return(oupkg.OrganizationUnit{}, internalErr)
 
 	resp, svcErr := svc.UpdateAgent(context.Background(), testAgentID, &model.UpdateAgentRequest{
 		Name: testAgentName, Type: testAgentType, OUHandle: "bad-handle",

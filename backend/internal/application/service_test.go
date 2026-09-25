@@ -26,6 +26,7 @@ import (
 	inboundmodel "github.com/thunder-id/thunderid/internal/inboundclient/model"
 	oauthconfig "github.com/thunder-id/thunderid/internal/oauth/config"
 	"github.com/thunder-id/thunderid/internal/oauth/oauth2/tokenservice"
+	"github.com/thunder-id/thunderid/internal/ou"
 	"github.com/thunder-id/thunderid/internal/serverconfig"
 	"github.com/thunder-id/thunderid/internal/system/config"
 	serverconst "github.com/thunder-id/thunderid/internal/system/constants"
@@ -3831,7 +3832,7 @@ func (suite *ServiceTestSuite) TestValidateApplicationFields_OUHandleResolved() 
 
 	ouMock := service.ouService.(*oumock.OrganizationUnitServiceInterfaceMock)
 	ouMock.On("GetOrganizationUnitByPath", mock.Anything, "default").
-		Return(providers.OrganizationUnit{ID: testOUID}, nil).Once()
+		Return(ou.OrganizationUnit{ID: testOUID}, nil).Once()
 
 	app := &model.ApplicationDTO{
 		Name:     "test-app",
@@ -3858,7 +3859,7 @@ func (suite *ServiceTestSuite) TestValidateApplicationFields_OUHandleNotFound() 
 
 	ouMock := service.ouService.(*oumock.OrganizationUnitServiceInterfaceMock)
 	ouMock.On("GetOrganizationUnitByPath", mock.Anything, "bad-handle").
-		Return(providers.OrganizationUnit{}, &tidcommon.ServiceError{Code: "OUS-4004"}).Once()
+		Return(ou.OrganizationUnit{}, &tidcommon.ServiceError{Code: "OUS-4004"}).Once()
 
 	app := &model.ApplicationDTO{
 		Name:     "test-app",

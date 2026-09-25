@@ -25,7 +25,7 @@ import (
 	"github.com/thunder-id/thunderid/tests/mocks/entityprovidermock"
 	"github.com/thunder-id/thunderid/tests/mocks/i18n/mgtmock"
 	"github.com/thunder-id/thunderid/tests/mocks/inboundclientmock"
-	"github.com/thunder-id/thunderid/tests/mocks/oumock"
+	"github.com/thunder-id/thunderid/tests/mocks/ouprovidermock"
 )
 
 const (
@@ -39,7 +39,7 @@ type FlowMetaServiceTestSuite struct {
 	suite.Suite
 	mockInboundClient  *inboundclientmock.InboundClientServiceInterfaceMock
 	mockEntityProvider *entityprovidermock.EntityProviderInterfaceMock
-	mockOUService      *oumock.OrganizationUnitServiceInterfaceMock
+	mockOUService      *ouprovidermock.OrganizationUnitProviderMock
 	mockDesignResolve  *resolvemock.DesignResolveServiceInterfaceMock
 	mockI18nService    *mgtmock.I18nServiceInterfaceMock
 	service            FlowMetaServiceInterface
@@ -53,7 +53,7 @@ func TestFlowMetaServiceTestSuite(t *testing.T) {
 func (suite *FlowMetaServiceTestSuite) SetupTest() {
 	suite.mockInboundClient = inboundclientmock.NewInboundClientServiceInterfaceMock(suite.T())
 	suite.mockEntityProvider = entityprovidermock.NewEntityProviderInterfaceMock(suite.T())
-	suite.mockOUService = oumock.NewOrganizationUnitServiceInterfaceMock(suite.T())
+	suite.mockOUService = ouprovidermock.NewOrganizationUnitProviderMock(suite.T())
 	suite.mockDesignResolve = resolvemock.NewDesignResolveServiceInterfaceMock(suite.T())
 	suite.mockI18nService = mgtmock.NewI18nServiceInterfaceMock(suite.T())
 	suite.service = newFlowMetaService(
