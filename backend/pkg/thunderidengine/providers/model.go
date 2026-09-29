@@ -36,78 +36,45 @@ type DesignResponse struct {
 	Layout json.RawMessage `json:"layout,omitempty"`
 }
 
-// OrganizationUnit represents an organization unit.
+// OrganizationUnit is the runtime view of an organization unit: its identity and the branding the
+// OAuth and flow layers render. The management model, with its REST, YAML and persistence
+// representations, belongs to the organization unit service.
 type OrganizationUnit struct {
-	ID                        string    `json:"id"                           yaml:"id"`
-	Handle                    string    `json:"handle"                       yaml:"handle"`
-	Name                      string    `json:"name"                         yaml:"name"`
-	Description               string    `json:"description,omitempty"        yaml:"description,omitempty"`
-	Parent                    *string   `json:"parent"                       yaml:"parent"`
-	ThemeID                   string    `json:"themeId,omitempty"            yaml:"themeId,omitempty"`
-	LayoutID                  string    `json:"layoutId,omitempty"           yaml:"layoutId,omitempty"`
-	AuthFlowID                string    `json:"authFlowId,omitempty"         yaml:"authFlowId,omitempty"`
-	RegistrationFlowID        string    `json:"registrationFlowId,omitempty" yaml:"registrationFlowId,omitempty"`
-	IsRegistrationFlowEnabled bool      `json:"isRegistrationFlowEnabled"    yaml:"isRegistrationFlowEnabled"`
-	RecoveryFlowID            string    `json:"recoveryFlowId,omitempty"     yaml:"recoveryFlowId,omitempty"`
-	IsRecoveryFlowEnabled     bool      `json:"isRecoveryFlowEnabled"        yaml:"isRecoveryFlowEnabled"`
-	SignOutFlowID             string    `json:"signOutFlowId,omitempty"           yaml:"signOutFlowId,omitempty"`
-	UserOnboardingFlowID      string    `json:"userOnboardingFlowId,omitempty"    yaml:"userOnboardingFlowId,omitempty"`
-	LogoURL                   string    `json:"logoUrl,omitempty"                 yaml:"logoUrl,omitempty"`
-	TosURI                    string    `json:"tosUri,omitempty"             yaml:"tosUri,omitempty"`
-	PolicyURI                 string    `json:"policyUri,omitempty"          yaml:"policyUri,omitempty"`
-	CookiePolicyURI           string    `json:"cookiePolicyUri,omitempty"    yaml:"cookiePolicyUri,omitempty"`
-	CreatedAt                 time.Time `json:"createdAt"                    yaml:"createdAt"`
-	UpdatedAt                 time.Time `json:"updatedAt"                    yaml:"updatedAt"`
+	ID              string
+	Handle          string
+	Name            string
+	Description     string
+	LogoURL         string
+	TosURI          string
+	PolicyURI       string
+	CookiePolicyURI string
 }
 
-// OrganizationUnitRequestWithID represents the request body for creating an organization unit
-// in import/declarative paths where preserving IDs is required.
+// OrganizationUnitRequestWithID is the runtime request for provisioning an organization unit. ID
+// may be left empty for the provider to generate one; the flow engine does not set it.
 type OrganizationUnitRequestWithID struct {
-	ID                        string  `json:"id"                           yaml:"id"                           native:"required"`
-	Handle                    string  `json:"handle"                       yaml:"handle"                       native:"required,min=1,max=100"`
-	Name                      string  `json:"name"                         yaml:"name"                         native:"required,min=1,max=100"`
-	Description               string  `json:"description,omitempty"        yaml:"description,omitempty"`
-	Parent                    *string `json:"parent"                       yaml:"parent"`
-	ThemeID                   string  `json:"themeId,omitempty"            yaml:"themeId,omitempty"`
-	LayoutID                  string  `json:"layoutId,omitempty"           yaml:"layoutId,omitempty"`
-	AuthFlowID                string  `json:"authFlowId,omitempty"         yaml:"authFlowId,omitempty"`
-	RegistrationFlowID        string  `json:"registrationFlowId,omitempty" yaml:"registrationFlowId,omitempty"`
-	IsRegistrationFlowEnabled bool    `json:"isRegistrationFlowEnabled"    yaml:"isRegistrationFlowEnabled"`
-	RecoveryFlowID            string  `json:"recoveryFlowId,omitempty"     yaml:"recoveryFlowId,omitempty"`
-	IsRecoveryFlowEnabled     bool    `json:"isRecoveryFlowEnabled"        yaml:"isRecoveryFlowEnabled"`
-	SignOutFlowID             string  `json:"signOutFlowId,omitempty"         yaml:"signOutFlowId,omitempty"`
-	UserOnboardingFlowID      string  `json:"userOnboardingFlowId,omitempty"  yaml:"userOnboardingFlowId,omitempty"`
-	LogoURL                   string  `json:"logoUrl,omitempty"               yaml:"logoUrl,omitempty"               native:"omitempty,url,max=2048"`
-	TosURI                    string  `json:"tosUri,omitempty"             yaml:"tosUri,omitempty"             native:"omitempty,url,max=2048"`
-	PolicyURI                 string  `json:"policyUri,omitempty"          yaml:"policyUri,omitempty"          native:"omitempty,url,max=2048"`
-	CookiePolicyURI           string  `json:"cookiePolicyUri,omitempty"    yaml:"cookiePolicyUri,omitempty"    native:"url,max=2048"`
+	ID          string
+	Handle      string
+	Name        string
+	Description string
+	Parent      *string
 }
 
-// Link is a pagination hyperlink on a list response.
-type Link struct {
-	Href string `json:"href"`
-	Rel  string `json:"rel"`
-}
-
-// OrganizationUnitListResponse represents the response for listing organization units with pagination.
+// OrganizationUnitListResponse is a page of organization units. The runtime reads TotalResults to
+// decide whether a unit has children; the remaining fields describe the page.
 type OrganizationUnitListResponse struct {
-	TotalResults      int                     `json:"totalResults"`
-	StartIndex        int                     `json:"startIndex"`
-	Count             int                     `json:"count"`
-	OrganizationUnits []OrganizationUnitBasic `json:"organizationUnits"`
-	Links             []Link                  `json:"links"`
+	TotalResults      int
+	StartIndex        int
+	Count             int
+	OrganizationUnits []OrganizationUnitBasic
 }
 
-// OrganizationUnitBasic represents the basic information of an organization unit.
+// OrganizationUnitBasic identifies an organization unit within a list response.
 type OrganizationUnitBasic struct {
-	ID          string    `json:"id"`
-	Handle      string    `json:"handle"`
-	Name        string    `json:"name"`
-	Description string    `json:"description,omitempty"`
-	LogoURL     string    `json:"logoUrl,omitempty"`
-	IsReadOnly  bool      `json:"isReadOnly"`
-	CreatedAt   time.Time `json:"createdAt"`
-	UpdatedAt   time.Time `json:"updatedAt"`
+	ID          string
+	Handle      string
+	Name        string
+	Description string
 }
 
 // ResourceServerType represents the type of a resource server.

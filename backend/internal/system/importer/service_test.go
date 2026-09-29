@@ -68,17 +68,17 @@ func boolPtr(v bool) *bool {
 	return &v
 }
 
-func updateOUCommon(existing map[string]providers.OrganizationUnit, updated *[]ou.OrganizationUnitRequest,
-	id string, request ou.OrganizationUnitRequest) (providers.OrganizationUnit, *tidcommon.ServiceError) {
+func updateOUCommon(existing map[string]ou.OrganizationUnit, updated *[]ou.OrganizationUnitRequest,
+	id string, request ou.OrganizationUnitRequest) (ou.OrganizationUnit, *tidcommon.ServiceError) {
 	if _, ok := existing[id]; !ok {
-		return providers.OrganizationUnit{}, &tidcommon.ServiceError{
+		return ou.OrganizationUnit{}, &tidcommon.ServiceError{
 			Type:  tidcommon.ClientErrorType,
 			Code:  "OU-1003",
 			Error: tidcommon.I18nMessage{DefaultValue: "not found"},
 		}
 	}
 	*updated = append(*updated, request)
-	result := providers.OrganizationUnit{
+	result := ou.OrganizationUnit{
 		ID:              id,
 		Handle:          request.Handle,
 		Name:            request.Name,
@@ -535,20 +535,20 @@ func (f *fakeEntityTypeService) UpdateEntityType(
 }
 
 type fakeOUService struct {
-	created  []providers.OrganizationUnitRequestWithID
+	created  []ou.OrganizationUnitRequestWithID
 	updated  []ou.OrganizationUnitRequest
-	existing map[string]providers.OrganizationUnit
+	existing map[string]ou.OrganizationUnit
 }
 
 func (f *fakeOUService) CreateOrganizationUnit(
-	_ context.Context, request providers.OrganizationUnitRequestWithID,
-) (providers.OrganizationUnit, *tidcommon.ServiceError) {
+	_ context.Context, request ou.OrganizationUnitRequestWithID,
+) (ou.OrganizationUnit, *tidcommon.ServiceError) {
 	id := request.ID
 	if id == "" {
 		id = "generated-ou-id"
 	}
 
-	created := providers.OrganizationUnit{
+	created := ou.OrganizationUnit{
 		ID:              id,
 		Handle:          request.Handle,
 		Name:            request.Name,
@@ -563,7 +563,7 @@ func (f *fakeOUService) CreateOrganizationUnit(
 	}
 	f.created = append(f.created, request)
 	if f.existing == nil {
-		f.existing = map[string]providers.OrganizationUnit{}
+		f.existing = map[string]ou.OrganizationUnit{}
 	}
 	f.existing[created.ID] = created
 	return created, nil
@@ -571,12 +571,12 @@ func (f *fakeOUService) CreateOrganizationUnit(
 
 func (f *fakeOUService) GetOrganizationUnit(
 	_ context.Context, id string,
-) (providers.OrganizationUnit, *tidcommon.ServiceError) {
+) (ou.OrganizationUnit, *tidcommon.ServiceError) {
 	if existing, ok := f.existing[id]; ok {
 		return existing, nil
 	}
 
-	return providers.OrganizationUnit{}, &tidcommon.ServiceError{
+	return ou.OrganizationUnit{}, &tidcommon.ServiceError{
 		Type:  tidcommon.ClientErrorType,
 		Code:  "OU-1003",
 		Error: tidcommon.I18nMessage{DefaultValue: "not found"},
@@ -585,14 +585,14 @@ func (f *fakeOUService) GetOrganizationUnit(
 
 func (f *fakeOUService) GetOrganizationUnitByPath(
 	_ context.Context, handlePath string,
-) (providers.OrganizationUnit, *tidcommon.ServiceError) {
+) (ou.OrganizationUnit, *tidcommon.ServiceError) {
 	for _, existing := range f.existing {
 		if existing.Handle == handlePath {
 			return existing, nil
 		}
 	}
 
-	return providers.OrganizationUnit{}, &tidcommon.ServiceError{
+	return ou.OrganizationUnit{}, &tidcommon.ServiceError{
 		Type:  tidcommon.ClientErrorType,
 		Code:  "OU-1003",
 		Error: tidcommon.I18nMessage{DefaultValue: "not found"},
@@ -600,8 +600,8 @@ func (f *fakeOUService) GetOrganizationUnitByPath(
 }
 
 func (f *fakeOUService) UpdateOrganizationUnit(
-	_ context.Context, id string, request providers.OrganizationUnitRequestWithID,
-) (providers.OrganizationUnit, *tidcommon.ServiceError) {
+	_ context.Context, id string, request ou.OrganizationUnitRequestWithID,
+) (ou.OrganizationUnit, *tidcommon.ServiceError) {
 	updateReq := ou.OrganizationUnitRequest{
 		Handle:          request.Handle,
 		Name:            request.Name,
@@ -1657,7 +1657,7 @@ func TestImportResources_UserCredentialFailureRollsBackCreate(t *testing.T) {
 }
 
 func TestImportResources_OrganizationUnitUpsertCreatePreservesID(t *testing.T) {
-	ouSvc := &fakeOUService{existing: map[string]providers.OrganizationUnit{}}
+	ouSvc := &fakeOUService{existing: map[string]ou.OrganizationUnit{}}
 	svc := newImportService(
 		nil, nil, nil, nil, ouSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
 	)
@@ -1684,7 +1684,7 @@ func TestImportResources_OrganizationUnitUpsertCreatePreservesID(t *testing.T) {
 }
 
 func TestImportResources_OrganizationUnitCarriesDefaultFlowFields(t *testing.T) {
-	ouSvc := &fakeOUService{existing: map[string]providers.OrganizationUnit{}}
+	ouSvc := &fakeOUService{existing: map[string]ou.OrganizationUnit{}}
 	svc := newImportService(
 		nil, nil, nil, nil, ouSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
 	)
@@ -2073,7 +2073,7 @@ func TestImportResources_EntityTypeUpsertCreatePreservesID(t *testing.T) {
 }
 
 func TestImportResources_UpsertCreatePreservesIDsAcrossResourceTypes(t *testing.T) {
-	ouSvc := &fakeOUService{existing: map[string]providers.OrganizationUnit{}}
+	ouSvc := &fakeOUService{existing: map[string]ou.OrganizationUnit{}}
 	themeSvc := &fakeThemeService{byID: map[string]*thememgt.Theme{}, byHandle: map[string]*thememgt.Theme{}}
 	entityTypeSvc := &fakeEntityTypeService{
 		byID:   map[string]*entitytype.EntityType{},
@@ -3096,7 +3096,7 @@ func (f *fakeResourceServerService) CreateAction(
 // TestImportRole_OUHandleResolved verifies that ou_handle on a role document is resolved
 // to ou_id via the OU service before the role create request is built.
 func TestImportRole_OUHandleResolved(t *testing.T) {
-	ouSvc := &fakeOUService{existing: map[string]providers.OrganizationUnit{
+	ouSvc := &fakeOUService{existing: map[string]ou.OrganizationUnit{
 		"ou-default": {ID: "ou-default", Handle: "default"},
 	}}
 	roleSvc := &fakeRoleService{}
@@ -3127,7 +3127,7 @@ func TestImportRole_OUHandleResolved(t *testing.T) {
 // TestImportRole_OUHandleNotFound verifies that an unknown ou_handle on a role document
 // causes the import to fail with a clear error.
 func TestImportRole_OUHandleNotFound(t *testing.T) {
-	ouSvc := &fakeOUService{existing: map[string]providers.OrganizationUnit{}}
+	ouSvc := &fakeOUService{existing: map[string]ou.OrganizationUnit{}}
 	roleSvc := &fakeRoleService{}
 	roleAssignmentSvc := &fakeRoleAssignmentService{}
 	svc := newImportService(
@@ -3155,7 +3155,7 @@ func TestImportRole_OUHandleNotFound(t *testing.T) {
 // TestImportRole_OUIDWinsOverHandle verifies that ou_id wins when both ou_id and ou_handle
 // are provided, and the OU service is never consulted.
 func TestImportRole_OUIDWinsOverHandle(t *testing.T) {
-	ouSvc := &fakeOUService{existing: map[string]providers.OrganizationUnit{}}
+	ouSvc := &fakeOUService{existing: map[string]ou.OrganizationUnit{}}
 	roleSvc := &fakeRoleService{}
 	roleAssignmentSvc := &fakeRoleAssignmentService{}
 	svc := newImportService(
@@ -3185,7 +3185,7 @@ func TestImportRole_OUIDWinsOverHandle(t *testing.T) {
 // TestImportGroup_OUHandleResolved verifies that ou_handle on a group document is resolved
 // to ou_id via the OU service before the group create request is built.
 func TestImportGroup_OUHandleResolved(t *testing.T) {
-	ouSvc := &fakeOUService{existing: map[string]providers.OrganizationUnit{
+	ouSvc := &fakeOUService{existing: map[string]ou.OrganizationUnit{
 		"ou-default": {ID: "ou-default", Handle: "default"},
 	}}
 	groupSvc := &fakeGroupService{}
@@ -3213,7 +3213,7 @@ func TestImportGroup_OUHandleResolved(t *testing.T) {
 // TestImportGroup_OUHandleNotFound verifies that an unknown ou_handle on a group document
 // causes the import to fail with a clear error.
 func TestImportGroup_OUHandleNotFound(t *testing.T) {
-	ouSvc := &fakeOUService{existing: map[string]providers.OrganizationUnit{}}
+	ouSvc := &fakeOUService{existing: map[string]ou.OrganizationUnit{}}
 	groupSvc := &fakeGroupService{}
 	svc := newImportService(
 		nil, nil, nil, nil, ouSvc, nil, nil, nil, groupSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil,
@@ -3238,7 +3238,7 @@ func TestImportGroup_OUHandleNotFound(t *testing.T) {
 // TestImportGroup_OUIDWinsOverHandle verifies that ou_id wins when both ou_id and ou_handle
 // are provided, and the OU service is never consulted.
 func TestImportGroup_OUIDWinsOverHandle(t *testing.T) {
-	ouSvc := &fakeOUService{existing: map[string]providers.OrganizationUnit{}}
+	ouSvc := &fakeOUService{existing: map[string]ou.OrganizationUnit{}}
 	groupSvc := &fakeGroupService{}
 	svc := newImportService(
 		nil, nil, nil, nil, ouSvc, nil, nil, nil, groupSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil,
@@ -3265,7 +3265,7 @@ func TestImportGroup_OUIDWinsOverHandle(t *testing.T) {
 // TestImportUser_OUHandleResolved verifies that ou_handle on a user document is resolved
 // to ou_id via the OU service before the user create request is built.
 func TestImportUser_OUHandleResolved(t *testing.T) {
-	ouSvc := &fakeOUService{existing: map[string]providers.OrganizationUnit{
+	ouSvc := &fakeOUService{existing: map[string]ou.OrganizationUnit{
 		"ou-default": {ID: "ou-default", Handle: "default"},
 	}}
 	userSvc := &fakeUserService{}
@@ -3298,7 +3298,7 @@ func TestImportUser_OUHandleResolved(t *testing.T) {
 // TestImportUser_OUHandleNotFound verifies that an unknown ou_handle on a user document
 // causes the import to fail with a clear error.
 func TestImportUser_OUHandleNotFound(t *testing.T) {
-	ouSvc := &fakeOUService{existing: map[string]providers.OrganizationUnit{}}
+	ouSvc := &fakeOUService{existing: map[string]ou.OrganizationUnit{}}
 	userSvc := &fakeUserService{}
 	svc := newImportService(
 		nil, nil, nil, nil, ouSvc, nil, nil, nil, nil, nil, nil, nil, userSvc, nil, nil, nil, nil, nil,
@@ -3325,7 +3325,7 @@ func TestImportUser_OUHandleNotFound(t *testing.T) {
 // TestImportUser_OUIDWinsOverHandle verifies that ou_id wins when both ou_id and ou_handle
 // are provided, and the OU service is never consulted.
 func TestImportUser_OUIDWinsOverHandle(t *testing.T) {
-	ouSvc := &fakeOUService{existing: map[string]providers.OrganizationUnit{}}
+	ouSvc := &fakeOUService{existing: map[string]ou.OrganizationUnit{}}
 	userSvc := &fakeUserService{}
 	svc := newImportService(
 		nil, nil, nil, nil, ouSvc, nil, nil, nil, nil, nil, nil, nil, userSvc, nil, nil, nil, nil, nil,
@@ -3357,7 +3357,7 @@ func TestImportUser_OUIDWinsOverHandle(t *testing.T) {
 // TestImportResourceServer_OUHandleResolved verifies that ou_handle on a resource server
 // document is resolved to ou_id via the OU service before the create request is built.
 func TestImportResourceServer_OUHandleResolved(t *testing.T) {
-	ouSvc := &fakeOUService{existing: map[string]providers.OrganizationUnit{
+	ouSvc := &fakeOUService{existing: map[string]ou.OrganizationUnit{
 		"ou-default": {ID: "ou-default", Handle: "default"},
 	}}
 	rsSvc := &fakeResourceServerService{}
@@ -3391,7 +3391,7 @@ func TestImportResourceServer_OUHandleResolved(t *testing.T) {
 // TestImportResourceServer_OUHandleNotFound verifies that an unknown ou_handle on a resource
 // server document causes the import to fail with a clear error.
 func TestImportResourceServer_OUHandleNotFound(t *testing.T) {
-	ouSvc := &fakeOUService{existing: map[string]providers.OrganizationUnit{}}
+	ouSvc := &fakeOUService{existing: map[string]ou.OrganizationUnit{}}
 	rsSvc := &fakeResourceServerService{}
 	svc := newImportService(
 		nil, nil, nil, nil, ouSvc, nil, nil, nil, nil, rsSvc, nil, nil, nil, nil, nil, nil, nil, nil,
@@ -3419,7 +3419,7 @@ func TestImportResourceServer_OUHandleNotFound(t *testing.T) {
 // TestImportResourceServer_OUIDWinsOverHandle verifies that ou_id wins when both ou_id and
 // ou_handle are provided, and the OU service is never consulted.
 func TestImportResourceServer_OUIDWinsOverHandle(t *testing.T) {
-	ouSvc := &fakeOUService{existing: map[string]providers.OrganizationUnit{}}
+	ouSvc := &fakeOUService{existing: map[string]ou.OrganizationUnit{}}
 	rsSvc := &fakeResourceServerService{}
 	svc := newImportService(
 		nil, nil, nil, nil, ouSvc, nil, nil, nil, nil, rsSvc, nil, nil, nil, nil, nil, nil, nil, nil,

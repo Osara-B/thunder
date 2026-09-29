@@ -119,8 +119,8 @@ func wrapWithCache(
 	if cacheManager == nil {
 		return store
 	}
-	ouByIDCache := cache.GetCache[*providers.OrganizationUnit](cacheManager, "OUByIDCache")
-	ouByHandleParentCache := cache.GetCache[*providers.OrganizationUnit](cacheManager, "OUByHandleParentCache")
+	ouByIDCache := cache.GetCache[*OrganizationUnit](cacheManager, "OUByIDCache")
+	ouByHandleParentCache := cache.GetCache[*OrganizationUnit](cacheManager, "OUByHandleParentCache")
 	return newCacheBackedOUStore(store, ouByIDCache, ouByHandleParentCache)
 }
 
