@@ -161,6 +161,16 @@ configuration:
     # security:
     #   jwksCacheTtl: 300
     #   directAuthSecret: "<strong-random-secret>"
+    #   # Audience (RFC 8707 resource indicator) each surface requires of a token. Both default to
+    #   # consoleClient.resourceIdentifier, so a deployment need not repeat its public URL.
+    #   # rest: bind REST API tokens to that identifier. Omit the block entirely to leave the
+    #   # audience unchecked (the default) — REST authorizes by scope.
+    #   rest:
+    #     audience: ""
+    #   # mcp: override the MCP resource identifier. Omit the block to let the server derive it from
+    #   # public_url; the check itself is mandatory and cannot be disabled.
+    #   mcp:
+    #     audience: ""
     #   trustedIssuer:
     #     issuer: "https://cp.example.com"
     #     jwksUrl: "https://cp.example.com/oauth2/jwks"
@@ -252,6 +262,12 @@ configuration:
   attributeCache:
     encryption:
       enabled: false
+
+  # Resource sharing configuration
+  resourceSharing:
+    # If true, an organization unit that has a parent may share a resource with a root
+    # organization unit in another tree. If false, only a root OU can share outside its own tree.
+    allowChildOuCrossTreeSharing: false
 
   # Database configuration
   database:

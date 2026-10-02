@@ -17,6 +17,19 @@ import (
 	engineconfig "github.com/thunder-id/thunderid/pkg/thunderidengine/config"
 )
 
+func TestAuthZENPDPDefaultsMergeAndValidation(t *testing.T) {
+	defaultRetries, zeroRetries := 1, 0
+	base := Config{AuthZENPDP: AuthZENPDPConfig{TimeoutMS: 500, RetryCount: &defaultRetries}}
+	user := Config{AuthZENPDP: AuthZENPDPConfig{TimeoutMS: 2000, RetryCount: &zeroRetries}}
+	mergeConfigs(&base, &user)
+	assert.Equal(t, 2000, base.AuthZENPDP.TimeoutMS)
+	assert.Equal(t, 0, *base.AuthZENPDP.RetryCount)
+	assert.NoError(t, base.AuthZENPDP.Validate())
+	negative := -1
+	assert.Error(t, (AuthZENPDPConfig{TimeoutMS: -1}).Validate())
+	assert.Error(t, (AuthZENPDPConfig{RetryCount: &negative}).Validate())
+}
+
 type ConfigTestSuite struct {
 	suite.Suite
 	originalEnvVars map[string]string
@@ -1110,6 +1123,73 @@ notification:
 	}
 }
 
+// TestLoadConfig_GateAudiences round-trips server.security.rest.audience and
+// server.security.mcp.audience, and locks in that a block carrying no audience leaves it unset —
+// the shape deployment.yaml ships, where the keys are present only as commented-out examples.
+func (suite *ConfigTestSuite) TestLoadConfig_GateAudiences() {
+	load := func(content string) *Config {
+		tempDir := suite.T().TempDir()
+		userFile := suite.createTempFile(tempDir, "rest-audience*.yaml", content)
+		cfg, err := LoadConfig(userFile, "", tempDir)
+		suite.Require().NoError(err)
+		suite.Require().NotNil(cfg)
+		return cfg
+	}
+
+	suite.Run("configured audience reaches the loaded config", func() {
+		cfg := load(`
+notification:
+  otp:
+    length: 6
+    use_numeric_only: true
+    validity_period_seconds: 120
+server:
+  hostname: "localhost"
+  port: 8090
+  security:
+    rest:
+      audience: "https://localhost:8090/mcp"
+`)
+		suite.Require().NotNil(cfg.Server.SecurityConfig.REST.Audience)
+		assert.Equal(suite.T(), "https://localhost:8090/mcp", *cfg.Server.SecurityConfig.REST.Audience)
+	})
+
+	suite.Run("mcp audience reaches the loaded config", func() {
+		cfg := load(`
+notification:
+  otp:
+    length: 6
+    use_numeric_only: true
+    validity_period_seconds: 120
+server:
+  hostname: "localhost"
+  port: 8090
+  security:
+    mcp:
+      audience: "https://id.example.com/mcp"
+`)
+		suite.Require().NotNil(cfg.Server.SecurityConfig.MCP.Audience)
+		assert.Equal(suite.T(), "https://id.example.com/mcp", *cfg.Server.SecurityConfig.MCP.Audience)
+	})
+
+	suite.Run("rest block with no audience leaves it unset", func() {
+		cfg := load(`
+notification:
+  otp:
+    length: 6
+    use_numeric_only: true
+    validity_period_seconds: 120
+server:
+  hostname: "localhost"
+  port: 8090
+  security:
+    rest:
+      # audience: "https://localhost:8090/mcp"
+`)
+		assert.Nil(suite.T(), cfg.Server.SecurityConfig.REST.Audience)
+	})
+}
+
 func (suite *ConfigTestSuite) TestLoadConfig_InvalidYAML() {
 	// Test YAML decode error - using a simple syntax error
 	invalidYAMLContent := "invalid: yaml: content"
@@ -1704,4 +1784,88 @@ allowed_subject_types:
 	assert.Empty(suite.T(), dst.AllowedClaims)
 	assert.Empty(suite.T(), dst.DefaultScopeClaimsMapping)
 	assert.Empty(suite.T(), dst.AllowedSubjectTypes)
+}
+
+// A deployment that sets max_gateways to zero means it administers none, and the merge has to keep
+// that. The merge only takes a user-supplied primitive when it is non-zero, so a plain int would be
+// indistinguishable from an omitted field and default.json's one would win.
+func TestMergeKeepsAnExplicitlyZeroGatewayBound(t *testing.T) {
+	shipped := 1
+	none := 0
+
+	base := &Config{Gateway: GatewayConfig{MaxGateways: &shipped}}
+	mergeConfigs(base, &Config{Gateway: GatewayConfig{MaxGateways: &none}})
+
+	if got := base.Gateway.MaxGatewayCount(); got != 0 {
+		t.Errorf("an explicit zero was discarded by the merge, got %d", got)
+	}
+}
+
+// Omitting it is the other half: nothing supplied leaves what default.json carries.
+func TestMergeKeepsTheShippedGatewayBoundWhenUnset(t *testing.T) {
+	shipped := 1
+
+	base := &Config{Gateway: GatewayConfig{MaxGateways: &shipped}}
+	mergeConfigs(base, &Config{})
+
+	if got := base.Gateway.MaxGatewayCount(); got != 1 {
+		t.Errorf("an omitted field overwrote the shipped bound, got %d", got)
+	}
+}
+
+// With nothing configured at all a deployment administers none, rather than this code inventing a
+// number that default.json already carries.
+func TestGatewayBoundDefaultsToNone(t *testing.T) {
+	if got := (GatewayConfig{}).MaxGatewayCount(); got != 0 {
+		t.Errorf("expected an unconfigured bound to be none, got %d", got)
+	}
+}
+
+func (suite *ConfigTestSuite) TestBackchannelLogoutConfig_IsEnabled() {
+	var unset engineconfig.BackchannelLogoutConfig
+	assert.False(suite.T(), unset.IsEnabled(), "unset means disabled")
+	assert.False(suite.T(), engineconfig.BackchannelLogoutConfig{Enabled: boolPtr(false)}.IsEnabled())
+	assert.True(suite.T(), engineconfig.BackchannelLogoutConfig{Enabled: boolPtr(true)}.IsEnabled())
+}
+
+// The full block ships in default.json with delivery switched off, so enabling it later is one key.
+func (suite *ConfigTestSuite) TestMergeConfigs_BackchannelLogoutDefaultsSurviveAnEnableOverride() {
+	base := &Config{OAuth: OAuthConfig{Logout: engineconfig.LogoutConfig{
+		Enabled: boolPtr(true),
+		Backchannel: engineconfig.BackchannelLogoutConfig{
+			Enabled: boolPtr(false), TokenValidityPeriod: 120, RequestTimeout: 5, MaxAttempts: 3,
+			RetryDelay: 2, MaxInFlight: 16, QueueSize: 1024,
+		},
+	}}}
+	user := &Config{OAuth: OAuthConfig{Logout: engineconfig.LogoutConfig{
+		Backchannel: engineconfig.BackchannelLogoutConfig{Enabled: boolPtr(true)},
+	}}}
+
+	mergeConfigs(base, user)
+
+	got := base.OAuth.Logout.Backchannel
+	assert.True(suite.T(), got.IsEnabled())
+	assert.True(suite.T(), base.OAuth.Logout.IsEnabled(), "the parent flag is untouched")
+	assert.Equal(suite.T(), int64(120), got.TokenValidityPeriod)
+	assert.Equal(suite.T(), int64(5), got.RequestTimeout)
+	assert.Equal(suite.T(), 3, got.MaxAttempts)
+	assert.Equal(suite.T(), int64(2), got.RetryDelay)
+	assert.Equal(suite.T(), 16, got.MaxInFlight)
+	assert.Equal(suite.T(), 1024, got.QueueSize)
+}
+
+// reject_private_addresses defaults to true in default.json, so an explicit false must survive the merge.
+func (suite *ConfigTestSuite) TestMergeConfigs_RejectPrivateAddressesCanBeTurnedOff() {
+	base := &Config{OAuth: OAuthConfig{Logout: engineconfig.LogoutConfig{
+		Backchannel: engineconfig.BackchannelLogoutConfig{RejectPrivateAddresses: boolPtr(true)},
+	}}}
+	user := &Config{OAuth: OAuthConfig{Logout: engineconfig.LogoutConfig{
+		Backchannel: engineconfig.BackchannelLogoutConfig{RejectPrivateAddresses: boolPtr(false)},
+	}}}
+
+	mergeConfigs(base, user)
+
+	assert.False(suite.T(), base.OAuth.Logout.Backchannel.RejectsPrivateAddresses())
+	var unset engineconfig.BackchannelLogoutConfig
+	assert.True(suite.T(), unset.RejectsPrivateAddresses(), "unset fails safe")
 }

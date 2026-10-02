@@ -124,6 +124,20 @@ func (p *actorProvider) GetActorGroups(
 	return groups, nil
 }
 
+// GetTransitiveGroupAncestors returns the ancestor chain of a single group.
+func (p *actorProvider) GetTransitiveGroupAncestors(
+	groupID string,
+) ([]string, *tidcommon.ServiceError) {
+	ancestors, epErr := p.entityProvider.GetTransitiveGroupAncestors(groupID)
+	if epErr != nil {
+		if epErr.Code == entityprovider.ErrorCodeNotImplemented {
+			return nil, nil
+		}
+		return nil, mapEntityProviderError(epErr)
+	}
+	return ancestors, nil
+}
+
 // GetActorRoles returns the roles assigned to the actor, directly and through the given groups.
 func (p *actorProvider) GetActorRoles(
 	actorID string, groupIDs []string,
@@ -156,6 +170,7 @@ func toProviderOAuthClient(c *providers.OAuthClient) *providers.OAuthClient {
 		ClientID:                           c.ClientID,
 		RedirectURIs:                       c.RedirectURIs,
 		PostLogoutRedirectURIs:             c.PostLogoutRedirectURIs,
+		BackchannelLogoutURI:               c.BackchannelLogoutURI,
 		TokenEndpointAuthMethod:            c.TokenEndpointAuthMethod,
 		PKCERequired:                       c.PKCERequired,
 		PublicClient:                       c.PublicClient,

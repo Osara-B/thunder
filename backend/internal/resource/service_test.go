@@ -17,6 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 
+	"github.com/thunder-id/thunderid/internal/connection/authzenpdp"
 	oupkg "github.com/thunder-id/thunderid/internal/ou"
 	"github.com/thunder-id/thunderid/internal/system/config"
 	"github.com/thunder-id/thunderid/internal/system/log"
@@ -35,6 +36,20 @@ const (
 
 var testParentResourceID = "parent-123"
 var testEmptyResourceID = ""
+
+type authZENPDPConnectionLookupStub struct {
+	connection *authzenpdp.AuthZENPDPConnection
+	id         string
+	err        *tidcommon.ServiceError
+}
+
+func (s *authZENPDPConnectionLookupStub) GetAuthZENPDP(
+	_ context.Context,
+	id string,
+) (*authzenpdp.AuthZENPDPConnection, *tidcommon.ServiceError) {
+	s.id = id
+	return s.connection, s.err
+}
 
 // matchResourceServer is a matcher function that compares providers.ResourceServer ignoring the Delimiter field
 // since it's set by the service before calling the store.
@@ -144,7 +159,7 @@ func (suite *ResourceServiceTestSuite) SetupTest() {
 	suite.mockOU = new(oumock.OrganizationUnitServiceInterfaceMock)
 	suite.mockTransactioner = &fakeTransactioner{}
 	suite.service, err = newResourceService(
-		suite.mockOU, suite.mockStore, suite.mockTransactioner,
+		suite.mockOU, suite.mockStore, suite.mockTransactioner, nil,
 	)
 	suite.NoError(err)
 	// The resource service is its own dependency provider: deletion consults the registry, which
@@ -186,7 +201,7 @@ func (suite *ResourceServiceTestSuite) TestNewResourceService_InvalidDelimiter()
 	mockOU := new(oumock.OrganizationUnitServiceInterfaceMock)
 
 	mockTransactioner := &fakeTransactioner{}
-	service, err := newResourceService(mockOU, mockStore, mockTransactioner)
+	service, err := newResourceService(mockOU, mockStore, mockTransactioner, nil)
 
 	suite.Error(err)
 	suite.Nil(service)
@@ -194,6 +209,42 @@ func (suite *ResourceServiceTestSuite) TestNewResourceService_InvalidDelimiter()
 }
 
 // Resource Server Tests
+
+func TestValidateAuthorizationEngine(t *testing.T) {
+	lookup := &authZENPDPConnectionLookupStub{
+		connection: &authzenpdp.AuthZENPDPConnection{ID: "pdp-1"},
+	}
+	service := &resourceService{
+		logger:            *log.GetLogger(),
+		authZENPDPService: lookup,
+	}
+
+	engineConfig := providers.AuthorizationEngineConfig{
+		Type: providers.AuthorizationEngineTypeAuthZENPDP,
+		Properties: providers.AuthorizationEngineProperties{
+			PDPConnectionID: " pdp-1 ",
+		},
+	}
+	require.Nil(t, service.validateAuthorizationEngine(context.Background(), &engineConfig))
+	require.Equal(t, "pdp-1", lookup.id)
+	require.Equal(t, "pdp-1", engineConfig.Properties.PDPConnectionID)
+
+	emptyConfig := providers.AuthorizationEngineConfig{
+		Type: providers.AuthorizationEngineTypeAuthZENPDP,
+	}
+	require.Equal(t, ErrorInvalidRequestFormat.Code,
+		service.validateAuthorizationEngine(context.Background(), &emptyConfig).Code)
+
+	lookup.connection = nil
+	missingConfig := providers.AuthorizationEngineConfig{
+		Type: providers.AuthorizationEngineTypeAuthZENPDP,
+		Properties: providers.AuthorizationEngineProperties{
+			PDPConnectionID: "missing-pdp",
+		},
+	}
+	require.Equal(t, ErrorInvalidRequestFormat.Code,
+		service.validateAuthorizationEngine(context.Background(), &missingConfig).Code)
+}
 
 func (suite *ResourceServiceTestSuite) TestCreateResourceServer_Success() {
 	rs := providers.ResourceServer{
@@ -669,6 +720,18 @@ func (suite *ResourceServiceTestSuite) TestUpdateResourceServer_ValidationErrors
 			id:             "rs-123",
 			resourceServer: providers.ResourceServer{Name: "test-rs", OUID: ""},
 			expectedError:  ErrorInvalidRequestFormat,
+		},
+		{
+			name: "UnsupportedAuthorizationEngine",
+			id:   "rs-123",
+			resourceServer: providers.ResourceServer{
+				Name: "test-rs",
+				OUID: "ou-123",
+				AuthorizationEngine: providers.AuthorizationEngineConfig{
+					Type: "unsupported",
+				},
+			},
+			expectedError: ErrorInvalidRequestFormat,
 		},
 	}
 
@@ -4814,7 +4877,7 @@ func (suite *ResourceServiceTestSuite) TestValidatePermissions() {
 			// Create a fresh service instance with the fresh mocks
 			mockTransactioner := &fakeTransactioner{}
 			svc, err := newResourceService(
-				mockOU, mockStore, mockTransactioner,
+				mockOU, mockStore, mockTransactioner, nil,
 			)
 			suite.Require().NoError(err)
 

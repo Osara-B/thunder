@@ -409,7 +409,7 @@ ALL_CONTENT_IDS=$(find "$REPO_ROOT/docs/content" -name '*.mdx' -print0 2>/dev/nu
 
 SIDEBAR_FILES=("$REPO_ROOT/docs/sidebars.ts")
 while IFS= read -r -d '' f; do SIDEBAR_FILES+=("$f"); done \
-  < <(find "$REPO_ROOT/docs/content/sdks" -name 'sidebar.ts' -print0 2>/dev/null)
+  < <(find "$REPO_ROOT/docs/content/sdks-and-tools" -name 'sidebar.ts' -print0 2>/dev/null)
 
 SIDEBAR_IDS=$(grep -horE "id: '[^']+'" "${SIDEBAR_FILES[@]}" 2>/dev/null | sed -E "s/.*id: '([^']+)'.*/\1/" | sort -u)
 

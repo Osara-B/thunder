@@ -15,6 +15,8 @@ import (
 
 func boolPtr(b bool) *bool { return &b }
 
+func strPtr(s string) *string { return &s }
+
 type ValidateTestSuite struct {
 	suite.Suite
 }
@@ -138,6 +140,76 @@ func (suite *ValidateTestSuite) TestSecurityConfig_Validate() {
 			TokenRevocation: TokenRevocationConfig{Enabled: boolPtr(true), SyncIntervalSeconds: -1},
 		}
 		assert.ErrorContains(t, c.Validate(), "sync_interval_seconds")
+	})
+
+	suite.T().Run("propagates REST error", func(t *testing.T) {
+		c := &SecurityConfig{REST: RESTConfig{Audience: strPtr("")}}
+		assert.ErrorContains(t, c.Validate(), "rest.audience")
+	})
+
+	suite.T().Run("propagates MCP error", func(t *testing.T) {
+		c := &SecurityConfig{MCP: MCPConfig{Audience: strPtr("")}}
+		assert.ErrorContains(t, c.Validate(), "mcp.audience")
+	})
+}
+
+// ----- MCPConfig -----
+
+func (suite *ValidateTestSuite) TestMCPConfig_Validate() {
+	suite.T().Run("absent audience passes", func(t *testing.T) {
+		assert.NoError(t, (&MCPConfig{}).Validate())
+	})
+
+	suite.T().Run("configured audience passes", func(t *testing.T) {
+		assert.NoError(t, (&MCPConfig{Audience: strPtr("https://id.example.com/mcp")}).Validate())
+	})
+
+	// Unlike REST, omitting the MCP audience does not disable the check — it falls back to the
+	// derived resource identifier. An explicitly empty value is still a misconfiguration.
+	suite.T().Run("explicitly empty audience fails", func(t *testing.T) {
+		assert.ErrorContains(t, (&MCPConfig{Audience: strPtr("")}).Validate(), "mcp.audience")
+	})
+
+	// http is accepted: the identifier the server derives for itself is http when
+	// server.http_only is set, so configuring that same value explicitly must not be rejected.
+	suite.T().Run("http audience passes", func(t *testing.T) {
+		assert.NoError(t, (&MCPConfig{Audience: strPtr("http://localhost:8090/mcp")}).Validate())
+	})
+}
+
+// ----- audience normalisation -----
+
+// Surrounding whitespace is never meaningful in an identifier, and an audience carrying it would
+// silently match nothing. Trim it instead of failing startup over a formatting slip.
+func (suite *ValidateTestSuite) TestOptionalAudience_TrimsSurroundingWhitespace() {
+	cfg := &RESTConfig{Audience: strPtr("  https://localhost:8090/mcp\t")}
+
+	assert.NoError(suite.T(), cfg.Validate())
+	assert.Equal(suite.T(), "https://localhost:8090/mcp", *cfg.Audience)
+}
+
+// Whitespace-only is empty once trimmed, and empty is the one value that fails open: it would leave
+// the gate unenforced rather than merely unmatched.
+func (suite *ValidateTestSuite) TestOptionalAudience_WhitespaceOnlyIsEmpty() {
+	assert.ErrorContains(suite.T(),
+		(&RESTConfig{Audience: strPtr("   ")}).Validate(), "rest.audience")
+}
+
+// ----- RESTConfig -----
+
+func (suite *ValidateTestSuite) TestRESTConfig_Validate() {
+	suite.T().Run("absent audience passes", func(t *testing.T) {
+		assert.NoError(t, (&RESTConfig{}).Validate())
+	})
+
+	suite.T().Run("configured audience passes", func(t *testing.T) {
+		assert.NoError(t, (&RESTConfig{Audience: strPtr("https://localhost:8090/mcp")}).Validate())
+	})
+
+	// An explicitly empty audience must fail startup rather than silently leaving the REST gate
+	// unenforced — omitting the key is the way to opt out.
+	suite.T().Run("explicitly empty audience fails", func(t *testing.T) {
+		assert.ErrorContains(t, (&RESTConfig{Audience: strPtr("")}).Validate(), "rest.audience")
 	})
 }
 
@@ -324,4 +396,36 @@ func (suite *ValidateTestSuite) TestOAuthConfig_SendServerErrorsToClientEnabled(
 			assert.Equal(t, tt.expected, c.SendServerErrorsToClientEnabled())
 		})
 	}
+}
+
+func (suite *ValidateTestSuite) TestBackchannelLogoutConfig_Validate() {
+	valid := func() BackchannelLogoutConfig {
+		return BackchannelLogoutConfig{Enabled: boolPtr(true), TokenValidityPeriod: 120, RequestTimeout: 5,
+			MaxAttempts: 3, RetryDelay: 2, MaxInFlight: 16, QueueSize: 1024}
+	}
+	suite.T().Run("disabled skips validation", func(t *testing.T) {
+		assert.NoError(t, (&BackchannelLogoutConfig{Enabled: boolPtr(false)}).Validate())
+	})
+	suite.T().Run("defaults pass when enabled", func(t *testing.T) {
+		c := valid()
+		assert.NoError(t, c.Validate())
+	})
+	suite.T().Run("each tuning value must be positive", func(t *testing.T) {
+		zero := []struct {
+			name string
+			set  func(*BackchannelLogoutConfig)
+		}{
+			{"token_validity_period", func(c *BackchannelLogoutConfig) { c.TokenValidityPeriod = 0 }},
+			{"request_timeout", func(c *BackchannelLogoutConfig) { c.RequestTimeout = 0 }},
+			{"max_attempts", func(c *BackchannelLogoutConfig) { c.MaxAttempts = 0 }},
+			{"retry_delay", func(c *BackchannelLogoutConfig) { c.RetryDelay = -1 }},
+			{"max_in_flight", func(c *BackchannelLogoutConfig) { c.MaxInFlight = 0 }},
+			{"queue_size", func(c *BackchannelLogoutConfig) { c.QueueSize = 0 }},
+		}
+		for _, tc := range zero {
+			c := valid()
+			tc.set(&c)
+			assert.ErrorContains(t, c.Validate(), tc.name)
+		}
+	})
 }

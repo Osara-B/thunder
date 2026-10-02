@@ -396,6 +396,8 @@ func evaluateSingleClause(ou *providers.OrganizationUnit, expr *tidcommon.Filter
 		return fieldVal > strTarget
 	case tidcommon.OperatorLt:
 		return fieldVal < strTarget
+	case tidcommon.OperatorSw:
+		return strings.HasPrefix(strings.ToLower(fieldVal), strings.ToLower(strTarget))
 	}
 	return false
 }

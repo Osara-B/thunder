@@ -31,9 +31,10 @@ import (
 type ExportEntityResourcesTestSuite struct {
 	suite.Suite
 
-	ouID       string
-	userTypeID string
-	userID     string
+	ouID              string
+	userTypeID        string
+	userID            string
+	agentTypeSnapshot *testutils.AgentTypeSnapshot
 }
 
 const (
@@ -80,6 +81,12 @@ func (ts *ExportEntityResourcesTestSuite) SetupSuite() {
 	ts.userTypeID = userTypeID
 
 	// The server allows a single `default` agent type, shared across suites and never deleted.
+	// Snapshot it before pointing it at this suite's OU, so teardown can put it back before that
+	// OU is deleted.
+	snapshot, err := testutils.SnapshotAgentType()
+	ts.Require().NoError(err, "Failed to snapshot the agent type")
+	ts.agentTypeSnapshot = snapshot
+
 	_, err = testutils.CreateAgentType(testutils.UserType{
 		OUID: ts.ouID,
 		Schema: map[string]interface{}{
@@ -104,6 +111,17 @@ func (ts *ExportEntityResourcesTestSuite) SetupSuite() {
 func (ts *ExportEntityResourcesTestSuite) TearDownSuite() {
 	ts.clearTranslationLanguage()
 
+	// Restored before the OU is deleted, so the singleton is never left pointing at a missing OU.
+	// A failed restore keeps the OU: leaking one is cheaper than leaving the shared agent type
+	// referencing a deleted resource, which every later suite would inherit.
+	agentTypeRestored := true
+	if ts.agentTypeSnapshot != nil {
+		if err := testutils.RestoreAgentType(ts.agentTypeSnapshot); err != nil {
+			ts.T().Errorf("teardown: failed to restore the default agent type: %v", err)
+			agentTypeRestored = false
+		}
+	}
+
 	if ts.userID != "" {
 		if err := testutils.DeleteUser(ts.userID); err != nil {
 			ts.T().Logf("Failed to delete the test user: %v", err)
@@ -114,7 +132,7 @@ func (ts *ExportEntityResourcesTestSuite) TearDownSuite() {
 			ts.T().Logf("Failed to delete the user type: %v", err)
 		}
 	}
-	if ts.ouID != "" {
+	if ts.ouID != "" && agentTypeRestored {
 		if err := testutils.DeleteOrganizationUnit(ts.ouID); err != nil {
 			ts.T().Logf("Failed to delete the test organization unit: %v", err)
 		}

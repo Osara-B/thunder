@@ -110,7 +110,7 @@ WAYFINDER_SAMPLE_APP_DIR=$SAMPLE_BASE_DIR/apps/wayfinder-sample
 QUICKSTART_SAMPLE_BUNDLES=(
     "wayfinder:$WAYFINDER_SAMPLE_APP_DIR/thunderid-config"
 )
-QUICKSTART_BUNDLE_STAGE_DIR="$FRONTEND_CONSOLE_APP_SOURCE_DIR/src/features/welcome/data/sample-bundles"
+QUICKSTART_BUNDLE_STAGE_DIR="$FRONTEND_CONSOLE_APP_SOURCE_DIR/src/data/sample-bundles"
 
 # Default ports
 GATE_APP_DEFAULT_PORT=5190
@@ -265,6 +265,27 @@ function build_backend() {
 
     echo "Initializing databases..."
     initialize_databases true
+    echo "================================================================"
+}
+
+function build_cp_backend() {
+    echo "================================================================"
+    echo "Building Go Control Plane backend..."
+    mkdir -p "$BUILD_DIR"
+
+    # The Control Plane ships alongside the all-in-one server rather than replacing it, so it takes
+    # its own binary name.
+    local output_binary="${BINARY_NAME}-cp"
+    if [ "$GO_OS" = "windows" ]; then
+        output_binary="${BINARY_NAME}-cp.exe"
+    fi
+
+    GOOS=$GO_OS GOARCH=$GO_ARCH CGO_ENABLED=0 go build -C "$BACKEND_BASE_DIR" \
+    -x -ldflags "-X \"main.version=$VERSION\" \
+    -X \"main.buildDate=$(date -u '+%Y-%m-%d %H:%M:%S UTC')\"" \
+    -o "../$BUILD_DIR/$output_binary" ./cmd/cpserver
+
+    echo "Control Plane binary: $BUILD_DIR/$output_binary"
     echo "================================================================"
 }
 
@@ -1198,6 +1219,9 @@ case "$1" in
         build_backend
         package
         ;;
+    build_cp_backend)
+        build_cp_backend
+        ;;
     build_frontend)
         build_frontend
         ;;
@@ -1274,6 +1298,7 @@ case "$1" in
         echo "  clean                    - Clean build artifacts"
         echo "  build                    - Build the complete ${PRODUCT_NAME} application (backend + frontend + samples)"
         echo "  build_backend            - Build only the ${PRODUCT_NAME} backend server"
+        echo "  build_cp_backend         - Build only the ${PRODUCT_NAME} Control Plane server"
         echo "  build_frontend           - Build only the Next.js frontend applications"
         echo "  build_docs               - Build only the documentation"
         echo "  tools_build              - Build all tool binaries (CLI + i18n-extractor + npm tools)"

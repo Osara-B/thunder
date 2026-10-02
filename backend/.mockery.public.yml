@@ -664,13 +664,14 @@ packages:
           filename: "{{.InterfaceName}}_mock.go"
 
   github.com/thunder-id/thunderid/internal/system/sysauthz:
+    config:
+      dir: tests/mocks/sysauthzmock
+      structname: '{{.InterfaceName}}Mock'
+      pkgname: sysauthzmock
+      filename: "{{.InterfaceName}}_mock.go"
     interfaces:
       SystemAuthorizationServiceInterface:
-        config:
-          dir: tests/mocks/sysauthzmock
-          structname: '{{.InterfaceName}}Mock'
-          pkgname: sysauthzmock
-          filename: "{{.InterfaceName}}_mock.go"
+      OUHierarchyResolver:
 
   github.com/thunder-id/thunderid/internal/consent:
     interfaces:

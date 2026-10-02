@@ -1194,6 +1194,27 @@ func (s *EntityTypeServiceTestSuite) TestGetAttributes_SchemaNotFound_ReturnsErr
 	s.Require().Equal(ErrorEntityTypeNotFound.Code, svcErr.Code)
 }
 
+func (s *EntityTypeServiceTestSuite) TestGetAttributesForEntityType_ReturnsAttributesByCategory() {
+	storeMock := newEntityTypeStoreInterfaceMock(s.T())
+	storeMock.
+		On("GetEntityTypeByName", context.Background(), TypeCategoryUser, "employee").
+		Return(EntityType{Schema: json.RawMessage(`{"email":{"type":"string"}}`)}, nil).
+		Once()
+	storeMock.
+		On("GetEntityTypeByName", context.Background(), TypeCategoryAgent, "employee").
+		Return(EntityType{Schema: json.RawMessage(`{"clientId":{"type":"string"}}`)}, nil).
+		Once()
+	service := &entityTypeService{entityTypeStore: storeMock, transactioner: &mockTransactioner{}}
+
+	attributes, svcErr := service.GetAttributesForEntityType(
+		context.Background(), "employee", AttributeFilter{AllowNonCredential: true},
+	)
+
+	s.Require().Nil(svcErr)
+	s.Require().Equal([]AttributeInfo{{Attribute: "email", Type: "string"}}, attributes[TypeCategoryUser])
+	s.Require().Equal([]AttributeInfo{{Attribute: "clientId", Type: "string"}}, attributes[TypeCategoryAgent])
+}
+
 func (s *EntityTypeServiceTestSuite) TestGetAttributes_EmptyEntityType_ReturnsError() {
 	storeMock := newEntityTypeStoreInterfaceMock(s.T())
 

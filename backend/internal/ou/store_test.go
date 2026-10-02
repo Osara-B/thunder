@@ -2240,6 +2240,22 @@ func TestBuildOUFilterGroup(t *testing.T) {
 			wantError: `unsupported operator "co"`,
 		},
 		{
+			name:     "starts with builds an escaped prefix LIKE",
+			g:        sg("name", tidcommon.OperatorSw, "Eng"),
+			startIdx: 2,
+			wantCond: ` AND LOWER(NAME) LIKE LOWER($2) ESCAPE '\'`,
+			wantArgs: []interface{}{"Eng%"},
+		},
+		{
+			// % and _ are LIKE wildcards, so an operand carrying either must be escaped or it
+			// would match more than the caller asked for.
+			name:     "starts with escapes wildcards in the operand",
+			g:        sg("name", tidcommon.OperatorSw, "100%_x"),
+			startIdx: 2,
+			wantCond: ` AND LOWER(NAME) LIKE LOWER($2) ESCAPE '\'`,
+			wantArgs: []interface{}{`100\%\_x%`},
+		},
+		{
 			name:     "nil group returns empty cond and nil args",
 			g:        nil,
 			startIdx: 2,

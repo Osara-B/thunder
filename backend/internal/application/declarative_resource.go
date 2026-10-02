@@ -203,6 +203,7 @@ func parseToApplicationDTO(data []byte) (*model.ApplicationDTO, error) {
 					ClientSecret:                       config.OAuthConfig.ClientSecret,
 					RedirectURIs:                       config.OAuthConfig.RedirectURIs,
 					PostLogoutRedirectURIs:             config.OAuthConfig.PostLogoutRedirectURIs,
+					BackchannelLogoutURI:               config.OAuthConfig.BackchannelLogoutURI,
 					GrantTypes:                         config.OAuthConfig.GrantTypes,
 					ResponseTypes:                      config.OAuthConfig.ResponseTypes,
 					TokenEndpointAuthMethod:            config.OAuthConfig.TokenEndpointAuthMethod,

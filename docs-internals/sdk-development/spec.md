@@ -1,13 +1,14 @@
 # SDK Development Specification
 
 - **Status:** Draft
-- **Version:** 0.1
+- **Version:** 0.3
 - **Related documents:**
   [threat-model.md](threat-model.md),
   [#5305](https://github.com/thunder-id/thunderid/issues/5305),
   [#3292](https://github.com/thunder-id/thunderid/discussions/3292),
   [#4065](https://github.com/thunder-id/thunderid/discussions/4065),
   [#5354](https://github.com/thunder-id/thunderid/discussions/5354),
+  [#5162](https://github.com/thunder-id/thunderid/issues/5162),
   [RFC 6749](https://datatracker.ietf.org/doc/html/rfc6749),
   [RFC 7636](https://datatracker.ietf.org/doc/html/rfc7636),
   [OpenID Connect Core 1.0](https://openid.net/specs/openid-connect-core-1_0.html)
@@ -325,6 +326,7 @@ this table already covers.
 | `discovery` | Object | No | Enabled | OIDC discovery behaviour. Discovered metadata MUST be fetched over HTTPS, and its `issuer` MUST match the expected issuer exactly before any endpoint from it is used. |
 | `endpoints` | Object | No | Discovered | Per-endpoint overrides for a server that does not publish discovery. Every override MUST use HTTPS and MUST share the origin of `baseUrl`, unless the application has explicitly allowed the other origin. |
 | `tokenRequest` | Object | No | Platform default | Token endpoint authentication and request shaping. |
+| `http` | Object | No | None | HTTP options. `http.fetcher` replaces the transport for [management operations](#management-operations) only. |
 
 **Session and tokens**
 
@@ -402,6 +404,51 @@ some platforms and not on others. An SDK adding an operation in this position MU
 Organization operations (listing, reading, and switching organizations) are a specification
 target and are deliberately not part of the required surface yet. An SDK MUST NOT ship a
 partial implementation of them ahead of a specification update.
+
+#### Management operations
+
+Management operations let an application administer ThunderID resources, so that an
+organization can build its own console, or embed part of one in its product, without calling
+the management API by hand. They are optional: an SDK MAY ship them, and one that does MUST
+follow this section.
+
+The initial resources are applications, users, and agents. Each exposes the same five
+operations, named for the resource in the platform's idiom (`getApplications`,
+`client.applications.list`, and so on):
+
+| Operation | Contract |
+|---|---|
+| List | Returns one page of the resource, with the total count. Accepts `limit` and `offset`, and a `filter` where the server supports one. |
+| Get | Returns a single resource by identifier. |
+| Create | Creates the resource and returns it as the server stored it. |
+| Update | Replaces the resource's mutable fields and returns the updated resource. |
+| Delete | Deletes the resource. Returns nothing. |
+
+Requirements:
+
+1. Requests are authorized with the signed-in user's access token. The SDK MUST NOT mint,
+   widen, or cache a separate credential for them. Whether a call succeeds is the server's
+   decision, and the token needs the permissions the server requires for that resource.
+2. The management API can run on a different host from the authorization server. The request
+   URL for each resource MUST come from, in order: an explicit URL passed to the call, then an
+   `endpoints` override for that resource's collection (`applications`, `users`, `agents`),
+   then `baseUrl` followed by the collection path. A single resource is addressed as the
+   collection URL followed by its identifier.
+3. The transport MUST be replaceable by the application through a `fetcher`. A `fetcher` passed
+   to a single call takes precedence over `http.fetcher` supplied at initialization, which takes
+   precedence over the SDK's default authenticated transport. `http.fetcher` applies to
+   management operations only. Authentication, token, and flow requests MUST keep using the
+   SDK's own transport until this specification says otherwise.
+4. A Core Lib or Framework Specific SDK MAY wrap these operations in its framework's reactive
+   model, such as a hook, an observable object, or a state holder. The wrapper MUST NOT depend
+   on a third-party data fetching or caching library, so an application can use its own.
+5. The SDK MUST NOT produce a user-visible side effect from a management operation. It does not
+   show a notification, translate a message, or write to the application's log. Success and
+   failure are reported to the caller, who decides what the user sees.
+6. A resource returned by these operations is a server record, not the signed-in user. It MUST
+   NOT reuse a type name the SDK already uses for the authenticated user.
+7. HTTP 403 and 404 MUST surface as distinct API error codes, so a caller can tell a missing
+   permission from a missing resource.
 
 ### Framework integration
 
@@ -606,20 +653,20 @@ public surface at all. "No time" is a deferral, not a reason: it is recorded as 
 issue in the repository that lacks the capability, and the issue is linked.
 
 **What is exempt.** Changes that do not touch the public surface: dependency updates,
-continuous integration and tooling, documentation, tests, and internal refactors.
+continuous integration and tooling, documentation, tests, and internal refactors. Exempt means
+exempt from porting, not from the decision. The decision is still recorded on the pull request,
+because whether a change reaches the other SDKs is a judgement a person makes, not one a file
+path can be trusted to make for them.
 
-**Enforcement.** A required check on each SDK repository reads the parity section of the pull
-request body. It expects one disposition per sibling repository, and each disposition is one of
-three things: a linked pull request, a written reason the capability does not apply there, or a
-linked tracked issue where the port is deferred. The check passes and applies the
-`sdk-parity-reviewed` label only when every sibling has one. A body that answers for one
-sibling and stays silent about the others fails, because a partial answer is how a gap gets
-missed: the check comments naming the repositories still unaccounted for, and links to this
-section.
+**Enforcement.** Every SDK repository carries a required check that blocks a pull request until
+the parity decision has been made on it. The decision is recorded on the pull request itself, in
+a form that survives the merge and can be queried across merged pull requests afterwards, since
+an unanswered decision on a merged pull request is what an audit looks for. A maintainer can
+record the decision by hand, which is the escape hatch when the check misjudges a change.
 
-The label means only that the parity question was answered for every sibling on that pull
-request, and its absence on a merged pull request is what an audit looks for. A maintainer
-applying the label by hand is the escape hatch when the check misjudges a change.
+How the check reads the decision, and what it records it as, is implementation detail and is not
+fixed here. The current implementation is a reusable workflow in this repository,
+`.github/workflows/sdk-parity-check.yml`, called by each SDK repository.
 
 **Existing divergences.** The rule applies from the point it is adopted. Capabilities that
 already differ between SDKs are reconciled through the normal issue backlog rather than
@@ -863,20 +910,19 @@ and go missing in the others unnoticed.
 
 **Acceptance criteria:**
 
-- **AC5.1:** Given a pull request changes the public surface of an SDK, when the parity check
-  runs and the body links no sibling pull request and gives no reason, then the check fails and
-  a comment names the sibling repositories.
-- **AC5.2:** Given the same pull request is edited so that every sibling repository has a
-  disposition, being a linked pull request, a written reason, or a linked tracked issue, when
-  the check re-runs, then it passes and applies `sdk-parity-reviewed`, without requiring a push.
-- **AC5.3:** Given a pull request that accounts for one sibling repository and says nothing
-  about the others, when the check runs, then it fails and the comment names the repositories
-  still unaccounted for.
-- **AC5.4:** Given a pull request touches only dependencies, CI, documentation, or tests, when
-  the check runs, then it is skipped.
-- **AC5.5:** Given a merged pull request that changed the public surface, when merged pull
-  requests are queried by label, then one lacking `sdk-parity-reviewed` is identifiable as an
-  unanswered parity decision.
+- **AC5.1:** Given a pull request in an SDK repository, when no parity decision has been
+  recorded on it, then the check fails and the pull request cannot merge.
+- **AC5.2:** Given the parity decision is then recorded, when the check runs again, then it
+  passes, without requiring a push.
+- **AC5.3:** Given a pull request whose decision is that the change reaches other SDKs, when any
+  sibling repository has no disposition on it, being a linked pull request, a linked tracked
+  issue where the port is deferred, or a stated reason the capability does not apply there, then
+  the check fails and identifies the repositories still unaccounted for. A partial answer is how
+  a gap gets missed, so it fails as no answer does.
+- **AC5.4:** Given a change that does not reach the public surface, when the parity decision is
+  recorded as not applicable, then the check passes on that basis alone.
+- **AC5.5:** Given a set of merged pull requests, when they are queried for their parity
+  decision, then one that merged without a decision recorded is identifiable.
 - **AC5.6:** Given a capability is deferred rather than ported, when the pull request is read,
   then it links a tracked issue in each repository that lacks the capability.
 
@@ -956,3 +1002,5 @@ I need.
 | Version | Date | Change |
 |---|---|---|
 | 0.1 | 2026-09-10 | Initial specification. |
+| 0.2 | 2026-09-15 | Cross-SDK parity enforcement stated as an outcome. How a check reads and records the decision is left to the implementation. |
+| 0.3 | 2026-09-26 | Management operations for applications, users, and agents added as an optional capability. |

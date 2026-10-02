@@ -46,10 +46,40 @@ type SecurityConfig struct {
 	TrustedIssuer          TrustedIssuerConfig   `yaml:"trusted_issuer"           json:"trusted_issuer"`
 	SystemPermissionPrefix string                `yaml:"system_permission_prefix" json:"system_permission_prefix"`
 	TokenRevocation        TokenRevocationConfig `yaml:"token_revocation"         json:"token_revocation"`
+	// ManagementAPIKeyHash is the SHA-256 hex digest of a key presented as `API-Key: <key>`, which
+	// authenticates a caller on these APIs and no others:
+	//
+	//     /import, /import/**
+	//     /variables, /variables/**
+	//     /secrets, /secrets/**
+	//
+	// Everything else stays behind OAuth. This is the digest, not the key, so a leaked configuration
+	// file yields nothing a caller can present. Empty disables it, which is the default.
+	//
+	// It is one long-lived key that cannot be scoped per caller or revoked without a restart, so
+	// prefer an OAuth client wherever one can be obtained. See the deployment configuration guide.
+	ManagementAPIKeyHash string `yaml:"management_api_key_hash" json:"management_api_key_hash"`
+
 	// DirectAuthSecret gates the Direct API endpoints (/auth/**, /register/passkey/**, /access/**).
 	// When set, callers must present this value in the Direct-Auth-Secret header; when empty, those
 	// endpoints are blocked (secure by default).
 	DirectAuthSecret string `yaml:"direct_auth_secret" json:"direct_auth_secret"`
+
+	REST RESTConfig `yaml:"rest" json:"rest"`
+	MCP  MCPConfig  `yaml:"mcp"  json:"mcp"`
+}
+
+// RESTConfig configures the REST API gate. Audience is the RFC 8707 resource indicator a
+// self-issued token must carry; nil leaves it unchecked, since REST authorizes by scope.
+type RESTConfig struct {
+	Audience *string `yaml:"audience" json:"audience"`
+}
+
+// MCPConfig configures the MCP server. Audience is the MCP resource identifier: both the required
+// token audience and the RFC 9728 published "resource". The MCP spec makes the check mandatory, so
+// nil falls back to the derived identifier rather than disabling it.
+type MCPConfig struct {
+	Audience *string `yaml:"audience" json:"audience"`
 }
 
 // TokenRevocationConfig configures the Resource Server's token-revocation enforcement: an in-memory
@@ -295,6 +325,45 @@ type LogoutConfig struct {
 	// explicit false in deployment.yaml overrides the default.json default of true; a nil
 	// pointer means "not set" and keeps the default.
 	Enabled *bool `yaml:"enabled" json:"enabled"`
+	// Backchannel configures OIDC Back-Channel Logout delivery.
+	Backchannel BackchannelLogoutConfig `yaml:"backchannel" json:"backchannel"`
+}
+
+// BackchannelLogoutConfig holds the settings for OIDC Back-Channel Logout delivery. Durations are
+// in seconds. The defaults live in default.json.
+type BackchannelLogoutConfig struct {
+	// Enabled controls whether terminated sessions are announced to relying parties. It uses a
+	// pointer so an explicit false in deployment.yaml overrides default.json; nil means "not set".
+	Enabled *bool `yaml:"enabled" json:"enabled"`
+	// TokenValidityPeriod is the lifetime of a logout token.
+	TokenValidityPeriod int64 `yaml:"token_validity_period" json:"token_validity_period"`
+	// RequestTimeout bounds one delivery attempt to a relying party.
+	RequestTimeout int64 `yaml:"request_timeout" json:"request_timeout"`
+	// MaxAttempts is the number of delivery attempts per relying party; 1 means no retry.
+	MaxAttempts int `yaml:"max_attempts" json:"max_attempts"`
+	// RetryDelay is the wait before the second attempt; it doubles on every further attempt. A
+	// Retry-After returned on 429 is honored up to the longest wait of that schedule.
+	RetryDelay int64 `yaml:"retry_delay" json:"retry_delay"`
+	// MaxInFlight caps concurrent deliveries across the whole dispatcher.
+	MaxInFlight int `yaml:"max_in_flight" json:"max_in_flight"`
+	// QueueSize caps pending termination events; beyond it events are dropped and recorded.
+	QueueSize int `yaml:"queue_size" json:"queue_size"`
+	// RejectPrivateAddresses rejects back-channel logout URIs whose host is localhost or an IP literal
+	// in a loopback, link-local, private or unspecified range. Hostnames are checked as written. It
+	// uses a pointer so an explicit false in deployment.yaml overrides the default of true.
+	RejectPrivateAddresses *bool `yaml:"reject_private_addresses" json:"reject_private_addresses"`
+}
+
+// IsEnabled reports whether back-channel logout delivery is active, defaulting to false when
+// unset (an explicit default lives in default.json).
+func (c BackchannelLogoutConfig) IsEnabled() bool {
+	return c.Enabled != nil && *c.Enabled
+}
+
+// RejectsPrivateAddresses reports whether private back-channel logout URIs are rejected. It defaults
+// to true when unset, so a configuration that never loaded default.json still fails safe.
+func (c BackchannelLogoutConfig) RejectsPrivateAddresses() bool {
+	return c.RejectPrivateAddresses == nil || *c.RejectPrivateAddresses
 }
 
 // IsEnabled reports whether the OAuth logout endpoint is active,
