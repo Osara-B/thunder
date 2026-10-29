@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strings"
 
 	tidcommon "github.com/thunder-id/thunderid/pkg/thunderidengine/common"
 	"github.com/thunder-id/thunderid/pkg/thunderidengine/providers"
@@ -55,6 +56,13 @@ type RoleServiceInterface interface {
 		ctx context.Context, entityID string, groups, roleIDs []string, resourceServerID string,
 		requestedPermissions []string,
 	) ([]string, *tidcommon.ServiceError)
+	// ExpandHeldDescendants returns, per permission, what the subject holds beneath it. It answers
+	// a request for a resource that nothing authorizes outright, where the subject nonetheless
+	// holds part of what sits under it.
+	ExpandHeldDescendants(
+		ctx context.Context, entityID string, groups, roleIDs []string, resourceServerID string,
+		permissions []string,
+	) (map[string][]string, *tidcommon.ServiceError)
 	// GetAllPermissions returns every permission the entity and/or groups hold, keyed by resource
 	// server. Unlike GetAuthorizedPermissionsByResourceServer it enumerates rather than checks.
 	GetAllPermissions(
@@ -71,6 +79,7 @@ type RoleServiceInterface interface {
 
 // roleService is the default implementation of the RoleServiceInterface.
 type roleService struct {
+	delimiters      *permissionDelimiterResolver
 	roleStore       roleStoreInterface
 	entityService   entity.EntityServiceInterface
 	groupService    group.GroupServiceInterface
@@ -91,6 +100,7 @@ func newRoleService(
 	authzService sysauthz.SystemAuthorizationServiceInterface,
 ) RoleServiceInterface {
 	return &roleService{
+		delimiters:      newPermissionDelimiterResolver(resourceService),
 		roleStore:       roleStore,
 		entityService:   entityService,
 		groupService:    groupService,
@@ -471,7 +481,11 @@ func (rs *roleService) ValidateDeleteRole(ctx context.Context, id string) (
 	if svcErr := rs.validateRoleMutable(ctx, id); svcErr != nil {
 		return nil, svcErr
 	}
-	return rs.roleAccessChangeTarget(ctx, id, role.Permissions)
+	revoked, svcErr := revokedPermissions(ctx, rs.resourceService, role.Permissions, nil)
+	if svcErr != nil {
+		return nil, svcErr
+	}
+	return rs.roleAccessChangeTarget(ctx, id, revoked)
 }
 
 // ValidateUpdateRolePermissions runs the checks UpdateRoleWithPermissions runs on the new permissions.
@@ -490,7 +504,11 @@ func (rs *roleService) ValidateUpdateRolePermissions(ctx context.Context, id str
 	if svcErr := rs.authzService.CanGrantPermissions(ctx, toPermissionSet(permissions)); svcErr != nil {
 		return nil, svcErr
 	}
-	return rs.roleAccessChangeTarget(ctx, id, droppedPermissions(role.Permissions, permissions))
+	revoked, svcErr := revokedPermissions(ctx, rs.resourceService, role.Permissions, permissions)
+	if svcErr != nil {
+		return nil, svcErr
+	}
+	return rs.roleAccessChangeTarget(ctx, id, revoked)
 }
 
 // ValidateGroupDeletion runs the group service's checks for the deletion and returns what it revokes.
@@ -571,9 +589,16 @@ func (rs *roleService) GetAuthorizedPermissionsByResourceServer(
 		return []string{}, nil
 	}
 
+	// A role may grant a parent permission rather than each descendant, so ask the store about every
+	// permission that would authorize one of the requested ones: the requested permission itself and
+	// each of its ancestors. Expanding here, rather than matching by prefix in SQL, keeps the store's
+	// lookup an indexed equality test.
+	delimiter := rs.delimiters.resolve(ctx, resourceServerID)
+	candidates, coverage := expandRequestedPermissions(requestedPermissions, delimiter)
+
 	// Get authorized permissions from store
-	authorizedPermissions, err := rs.roleStore.GetAuthorizedPermissionsByResourceServer(
-		ctx, entityID, groups, roleIDs, resourceServerID, requestedPermissions)
+	authorizedCandidates, err := rs.roleStore.GetAuthorizedPermissionsByResourceServer(
+		ctx, entityID, groups, roleIDs, resourceServerID, candidates)
 	if err != nil {
 		logger.Error(ctx, "Failed to get authorized permissions",
 			log.MaskedString(log.LoggerKeyUserID, entityID),
@@ -583,6 +608,17 @@ func (rs *roleService) GetAuthorizedPermissionsByResourceServer(
 		return nil, &tidcommon.InternalServerError
 	}
 
+	// The store answered about candidates; callers asked about the requested permissions, and match
+	// on those strings. Translate a matched ancestor back to what it authorizes.
+	authorizedPermissions := resolveCoveredPermissions(
+		requestedPermissions, authorizedCandidates, coverage)
+
+	// A permission authorized by an ancestor was never checked against the catalogue, because
+	// nothing granted it by name. Without this, any string beneath a held permission authorizes
+	// itself, and a caller could mint a scope the resource server never declared.
+	authorizedPermissions = rs.dropUndeclaredPermissions(
+		ctx, resourceServerID, authorizedPermissions, authorizedCandidates, delimiter)
+
 	logger.Debug(ctx, "Retrieved authorized permissions",
 		log.MaskedString(log.LoggerKeyUserID, entityID),
 		log.Int("groupCount", len(groups)),
@@ -591,6 +627,124 @@ func (rs *roleService) GetAuthorizedPermissionsByResourceServer(
 		log.Int("authorizedCount", len(authorizedPermissions)))
 
 	return authorizedPermissions, nil
+}
+
+// dropUndeclaredPermissions removes the permissions that only an ancestor authorized and that the
+// resource server does not declare.
+//
+// A permission the store matched by name needs no check: it is granted by a role, and a role's
+// permissions were validated against the catalogue when they were written. Only the ones an
+// ancestor conferred are unverified, since no row anywhere names them. That is what keeps this off
+// the common paths: a resource server whose permissions do not nest never reaches it, and neither
+// does a request the subject holds outright.
+//
+// A catalogue that cannot be read drops them rather than admitting them, which is the same
+// direction every other failure on this path takes: it refuses a permission an ancestor would have
+// conferred rather than granting one.
+func (rs *roleService) dropUndeclaredPermissions(
+	ctx context.Context, resourceServerID string,
+	authorizedPermissions, matchedByName []string, delimiter string,
+) []string {
+	if delimiter == "" || len(authorizedPermissions) == 0 {
+		return authorizedPermissions
+	}
+
+	named := make(map[string]struct{}, len(matchedByName))
+	for _, permission := range matchedByName {
+		named[permission] = struct{}{}
+	}
+
+	inherited := make([]string, 0, len(authorizedPermissions))
+	for _, permission := range authorizedPermissions {
+		if _, ok := named[permission]; !ok {
+			inherited = append(inherited, permission)
+		}
+	}
+	if len(inherited) == 0 {
+		return authorizedPermissions
+	}
+
+	logger := log.GetLogger().With(log.String(log.LoggerKeyComponentName, loggerComponentName))
+
+	undeclared, svcErr := rs.resourceService.ValidatePermissions(ctx, resourceServerID, inherited)
+	if svcErr != nil {
+		logger.Error(ctx, "Could not check inherited permissions against the catalogue; refusing them",
+			log.String("resourceServerID", resourceServerID),
+			log.Int("inheritedCount", len(inherited)))
+		undeclared = inherited
+	}
+	if len(undeclared) == 0 {
+		return authorizedPermissions
+	}
+
+	refused := make(map[string]struct{}, len(undeclared))
+	for _, permission := range undeclared {
+		refused[permission] = struct{}{}
+	}
+	logger.Debug(ctx, "Refusing permissions the resource server does not declare",
+		log.String("resourceServerID", resourceServerID),
+		log.Int("refusedCount", len(refused)))
+
+	declared := make([]string, 0, len(authorizedPermissions))
+	for _, permission := range authorizedPermissions {
+		if _, ok := refused[permission]; !ok {
+			declared = append(declared, permission)
+		}
+	}
+	return declared
+}
+
+// expandRequestedPermissions returns the permissions to ask the store about, together with a map
+// from each of those back to the requested permissions it would authorize.
+//
+// A requested permission is authorized by itself or by any of its ancestors, so the candidate set is
+// the requested permissions plus their ancestors. One candidate can authorize several requested
+// permissions, which is why the reverse mapping is needed to interpret the answer.
+func expandRequestedPermissions(
+	requestedPermissions []string, delimiter string,
+) ([]string, map[string][]string) {
+	candidates := make([]string, 0, len(requestedPermissions))
+	coverage := make(map[string][]string, len(requestedPermissions))
+
+	for _, requested := range requestedPermissions {
+		if requested == "" {
+			continue
+		}
+		for _, candidate := range append(
+			[]string{requested}, security.AncestorPermissions(requested, delimiter)...,
+		) {
+			if _, seen := coverage[candidate]; !seen {
+				candidates = append(candidates, candidate)
+			}
+			coverage[candidate] = append(coverage[candidate], requested)
+		}
+	}
+
+	return candidates, coverage
+}
+
+// resolveCoveredPermissions returns the requested permissions that at least one authorized candidate
+// covers, in the order they were requested.
+func resolveCoveredPermissions(
+	requestedPermissions, authorizedCandidates []string, coverage map[string][]string,
+) []string {
+	authorized := make(map[string]bool, len(requestedPermissions))
+	for _, candidate := range authorizedCandidates {
+		for _, requested := range coverage[candidate] {
+			authorized[requested] = true
+		}
+	}
+
+	covered := make([]string, 0, len(requestedPermissions))
+	for _, requested := range requestedPermissions {
+		if authorized[requested] {
+			covered = append(covered, requested)
+			// Guard against a requested permission listed twice yielding it twice.
+			authorized[requested] = false
+		}
+	}
+
+	return covered
 }
 
 // GetAllPermissions retrieves every permission the entity and/or groups hold through their assigned
@@ -890,7 +1044,11 @@ func (rs *roleService) groupScopes(ctx context.Context, groupID string) (
 			Permissions:      permissionSet[resourceServerID],
 		})
 	}
-	return resolveScopes(ctx, rs.resourceService, permissions)
+	revoked, svcErr := revokedPermissions(ctx, rs.resourceService, permissions, nil)
+	if svcErr != nil {
+		return nil, svcErr
+	}
+	return resolveScopes(ctx, rs.resourceService, revoked)
 }
 
 // validateRoleMutable refuses a change to a declarative role, failing closed when the check errors.
@@ -961,4 +1119,102 @@ func (rs *roleService) CascadeDeleteDependencies(
 	}
 
 	return deleted, nil
+}
+
+// ExpandHeldDescendants returns, for each permission that nothing the subject holds authorizes
+// outright, the permissions it actually holds beneath that one.
+//
+// A client asking for a resource is asking for what that resource covers. When the subject holds
+// the resource, coverage answers it and this is never consulted. When the subject holds only some
+// of what sits beneath it, refusing outright is wrong in the other direction: the subject does hold
+// part of what was asked for, and the client would get nothing.
+//
+// The resource itself is never returned. Holding everything beneath a resource is not holding the
+// resource, which would also confer whatever is added beneath it later. Returning the held
+// descendants says exactly what the subject has and nothing more.
+//
+// An empty result for a permission means there is nothing to substitute, which leaves the original
+// refusal standing.
+func (rs *roleService) ExpandHeldDescendants(
+	ctx context.Context, entityID string, groups, roleIDs []string, resourceServerID string,
+	permissions []string,
+) (map[string][]string, *tidcommon.ServiceError) {
+	logger := log.GetLogger().With(log.String(log.LoggerKeyComponentName, loggerComponentName))
+
+	delimiter := rs.delimiters.resolve(ctx, resourceServerID)
+	if delimiter == "" || len(permissions) == 0 {
+		return nil, nil
+	}
+
+	held, err := rs.heldPermissions(ctx, entityID, groups, roleIDs, resourceServerID)
+	if err != nil {
+		logger.Error(ctx, "Failed to enumerate held permissions",
+			log.MaskedString(log.LoggerKeyUserID, entityID),
+			log.String("resourceServerID", resourceServerID),
+			log.Error(err))
+		return nil, &tidcommon.InternalServerError
+	}
+
+	expanded := make(map[string][]string, len(permissions))
+	for _, permission := range permissions {
+		prefix := permission + delimiter
+		descendants := make([]string, 0, len(held))
+		seen := make(map[string]bool, len(held))
+		for _, candidate := range held {
+			if !strings.HasPrefix(candidate, prefix) || seen[candidate] {
+				continue
+			}
+			seen[candidate] = true
+			descendants = append(descendants, candidate)
+		}
+		if len(descendants) > 0 {
+			slices.Sort(descendants)
+			expanded[permission] = descendants
+		}
+	}
+
+	if len(expanded) == 0 {
+		return nil, nil
+	}
+	return expanded, nil
+}
+
+// heldPermissions enumerates every permission the subject holds on one resource server.
+//
+// Entity and group assignments are read in one query. Role IDs are read individually because they
+// are passed in rather than resolved from an assignment: a federated subject mapped straight to
+// roles has no entity or group row to enumerate from.
+func (rs *roleService) heldPermissions(
+	ctx context.Context, entityID string, groups, roleIDs []string, resourceServerID string,
+) ([]string, error) {
+	held := make([]string, 0)
+
+	if entityID != "" || len(groups) > 0 {
+		assigned, err := rs.roleStore.GetAllPermissionsForAssignees(ctx, entityID, groups)
+		if err != nil {
+			return nil, err
+		}
+		for _, entry := range assigned {
+			if entry.ResourceServerID == resourceServerID {
+				held = append(held, entry.Permissions...)
+			}
+		}
+	}
+
+	for _, roleID := range roleIDs {
+		role, err := rs.roleStore.GetRole(ctx, roleID)
+		if err != nil {
+			if errors.Is(err, ErrRoleNotFound) {
+				continue
+			}
+			return nil, err
+		}
+		for _, entry := range role.Permissions {
+			if entry.ResourceServerID == resourceServerID {
+				held = append(held, entry.Permissions...)
+			}
+		}
+	}
+
+	return held, nil
 }

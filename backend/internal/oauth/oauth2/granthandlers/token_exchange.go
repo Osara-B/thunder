@@ -285,9 +285,11 @@ func (h *tokenExchangeGrantHandler) HandleGrant(ctx context.Context, tokenReques
 	}
 	extendDelegationChain(actorClaims, subjectClaims, h.cfg.JWT.Issuer)
 
-	// Determine final scopes
+	// Determine final scopes. The delimiter decides whether a requested scope sits beneath one the
+	// subject token carries, so the resource server this exchange targets is read first.
 	finalScopes, errResp := h.getScopes(
-		tokenRequest, subjectClaims.Scopes, subjectClaims.Authorization.Configured)
+		tokenRequest, subjectClaims.Scopes, oauthApp.ScopeClaims,
+		h.exchangeDelimiter(ctx, tokenRequest.Resources), subjectClaims.Authorization.Configured)
 	if errResp != nil {
 		return nil, errResp
 	}
@@ -513,6 +515,8 @@ func (h *tokenExchangeGrantHandler) validateAccessTokenType(
 func (h *tokenExchangeGrantHandler) getScopes(
 	tokenRequest *model.TokenRequest,
 	subjectScopes []string,
+	scopeClaims map[string][]string,
+	delimiter string,
 	authorityIsMapping bool,
 ) ([]string, *model.ErrorResponse) {
 	if tokenRequest.Scope == "" {
@@ -543,15 +547,13 @@ func (h *tokenExchangeGrantHandler) getScopes(
 		}
 	}
 
-	// Filter requested scopes to only include those present in subject token
-	subjectScopeSet := make(map[string]bool)
-	for _, s := range subjectScopes {
-		subjectScopeSet[s] = true
-	}
-
+	// Keep the requested scopes the subject token's own scopes carry. A permission scope it holds
+	// carries what sits beneath it, so an exchange may narrow to a descendant rather than being
+	// refused for asking for less than the subject token was granted. Narrowing never works upwards.
+	oidcGranted := oidcScopeSet(subjectScopes, scopeClaims)
 	validRequestedScopes := []string{}
 	for _, requestedScope := range requestedScopes {
-		if subjectScopeSet[requestedScope] {
+		if grantPermits(requestedScope, subjectScopes, oidcGranted, delimiter) {
 			validRequestedScopes = append(validRequestedScopes, requestedScope)
 		}
 	}
@@ -582,4 +584,22 @@ func isCurrentActor(
 	sub, _ := act["sub"].(string)
 	iss, _ := act["iss"].(string)
 	return sub == actorClaims.Sub && cmp.Or(iss, serverIssuer) == cmp.Or(actorClaims.Iss, serverIssuer)
+}
+
+// exchangeDelimiter returns the delimiter of the resource server this exchange targets, for deciding
+// whether a requested scope sits beneath one the subject token carries.
+//
+// Only a resource server whose owner declared its permissions hierarchical narrows by coverage;
+// every other one keeps exact matching, which an empty delimiter gives.
+//
+// Best effort by design: the audience binding is resolved properly further down, and this must not
+// introduce a failure the exchange would not otherwise have had. A resource server that cannot be
+// determined here also yields an empty delimiter, which refuses a narrowed scope rather than
+// admitting one.
+func (h *tokenExchangeGrantHandler) exchangeDelimiter(ctx context.Context, resources []string) string {
+	targetRS, errResp := resourceindicators.ResolveTargetResourceServer(ctx, h.resourceService, resources)
+	if errResp != nil || targetRS == nil || !targetRS.HierarchicalPermissions {
+		return ""
+	}
+	return targetRS.Delimiter
 }

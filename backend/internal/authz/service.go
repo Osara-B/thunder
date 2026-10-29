@@ -349,8 +349,27 @@ func fromEngineAccessEvaluationsResponse(
 	for _, evaluation := range response.Evaluations {
 		evaluations = append(evaluations, providers.AccessEvaluationResponse{
 			Decision: evaluation.Decision,
-			Context:  evaluation.Context,
+			Context:  withGrantedInstead(evaluation.Context, evaluation.GrantedInstead),
 		})
 	}
 	return &providers.AccessEvaluationsResponse{Evaluations: evaluations}
+}
+
+// withGrantedInstead puts the permissions held beneath a refused one into the evaluation context,
+// which is how they reach a caller holding the public response type.
+//
+// The engine names them in a field of its own, so it does not have to know the public contract;
+// this is the boundary that already translates between the two.
+func withGrantedInstead(
+	evaluationContext map[string]interface{}, grantedInstead []string,
+) map[string]interface{} {
+	if len(grantedInstead) == 0 {
+		return evaluationContext
+	}
+	merged := make(map[string]interface{}, len(evaluationContext)+1)
+	for key, value := range evaluationContext {
+		merged[key] = value
+	}
+	merged[providers.ContextKeyGrantedInstead] = grantedInstead
+	return merged
 }

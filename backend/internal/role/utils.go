@@ -34,36 +34,6 @@ func resolveScopes(ctx context.Context, resourceService resourcepkg.ResourceServ
 	return scopes, nil
 }
 
-// droppedPermissions returns the permissions in current that next no longer grants.
-func droppedPermissions(current, next []ResourcePermissions) []ResourcePermissions {
-	kept := map[string]map[string]struct{}{}
-	for _, resource := range next {
-		if kept[resource.ResourceServerID] == nil {
-			kept[resource.ResourceServerID] = map[string]struct{}{}
-		}
-		for _, permission := range resource.Permissions {
-			kept[resource.ResourceServerID][permission] = struct{}{}
-		}
-	}
-
-	dropped := []ResourcePermissions{}
-	for _, resource := range current {
-		removed := []string{}
-		for _, permission := range resource.Permissions {
-			if _, ok := kept[resource.ResourceServerID][permission]; !ok {
-				removed = append(removed, permission)
-			}
-		}
-		if len(removed) > 0 {
-			dropped = append(dropped, ResourcePermissions{
-				ResourceServerID: resource.ResourceServerID,
-				Permissions:      removed,
-			})
-		}
-	}
-	return dropped
-}
-
 // expandPrincipal returns the entity itself, or every entity reachable from the group.
 func expandPrincipal(ctx context.Context, groupService group.GroupServiceInterface, principalID string,
 	isGroup bool) ([]string, *tidcommon.ServiceError) {

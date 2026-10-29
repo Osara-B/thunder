@@ -174,6 +174,12 @@ const (
 	RuntimeKeyClientID = "clientId"
 	// RuntimeKeyRequestedPermissions holds the space-separated permission scopes requested by the OAuth client.
 	RuntimeKeyRequestedPermissions = "requested_permissions"
+
+	// RuntimeKeyPermissionDelimiter holds the delimiter the bound resource server's permissions nest
+	// on, set by the authorization executor once it has resolved that resource server. Empty when
+	// its permissions do not nest, when no resource server is bound, or when no authorization step
+	// ran, each of which leaves later steps comparing permissions exactly.
+	RuntimeKeyPermissionDelimiter = "permission_delimiter"
 	// RuntimeKeyResourceServerIdentifier holds the identifier of the single resource server the request is
 	// bound to. When set, the authorization executor resolves it and scopes its permission evaluation to
 	// that resource server. Using the identifier (not the internal ID) keeps the executor contract the
@@ -182,6 +188,21 @@ const (
 	// RuntimeKeyConsentedPermissions holds the space-separated permission scopes the user has consented to
 	// release to the client, as produced by the ConsentExecutor.
 	RuntimeKeyConsentedPermissions = "consented_permissions"
+
+	// RuntimeKeyRefusedPermissions holds the space-separated permission scopes the subject was asked
+	// about and declined. Carried separately from the consented ones because a refusal is more
+	// specific than an approval that merely contains it: without it, declining a permission beneath
+	// an approved resource would be undone by that resource covering it.
+	RuntimeKeyRefusedPermissions = "refused_permissions"
+
+	// RuntimeKeySubstitutedPermissions holds the space-separated permissions that were granted in
+	// place of a broader one the client asked for and the subject does not hold.
+	//
+	// They are consented to as one decision rather than individually. The client asked for the
+	// resource, not for these; offering them as separate choices would ask the user to curate a set
+	// they never requested, and a partial answer would grant a subset of a subset. The user sees
+	// what they are granting and answers once.
+	RuntimeKeySubstitutedPermissions = "substituted_permissions"
 	// RuntimeKeyRequiredEssentialAttributes holds the space-separated essential user attributes required for the flow.
 	RuntimeKeyRequiredEssentialAttributes = "required_essential_attributes"
 	// RuntimeKeyRequiredOptionalAttributes holds the space-separated optional user attributes required for the flow.

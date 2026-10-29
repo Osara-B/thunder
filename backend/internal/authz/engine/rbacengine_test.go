@@ -30,6 +30,10 @@ func TestRBACEngineTestSuite(t *testing.T) {
 func (suite *RBACEngineTestSuite) SetupTest() {
 	suite.mockRoleService = rolemock.NewRoleServiceInterfaceMock(suite.T())
 	suite.engine = newRBACEngine(suite.mockRoleService)
+	// A refusal asks what the subject holds beneath the permission. Most cases hold nothing there,
+	// so the default answer is nothing and a case that cares overrides it.
+	suite.mockRoleService.On("ExpandHeldDescendants", mock.Anything, mock.Anything, mock.Anything,
+		mock.Anything, mock.Anything, mock.Anything).Return(nil, nil).Maybe()
 }
 
 func (suite *RBACEngineTestSuite) TestEvaluateAccessSuccess() {
@@ -184,4 +188,57 @@ func (suite *RBACEngineTestSuite) TestEvaluateAccessRoleServiceError() {
 	suite.Nil(result)
 	suite.NotNil(err)
 	suite.Contains(err.Error(), "role service error")
+}
+
+// A request for a resource the subject does not hold is still refused, but reports the permissions
+// it does hold beneath that resource, for the callers that mint a scope set from the answer.
+func (suite *RBACEngineTestSuite) TestEvaluateAccessReportsHeldDescendantsOfARefusedPermission() {
+	suite.mockRoleService.ExpectedCalls = nil
+
+	request := AccessEvaluationRequest{
+		Subject:        Subject{ID: testUserID1},
+		ResourceServer: ResourceServer{},
+		Permission:     Permission{Name: "reservations"},
+	}
+
+	suite.mockRoleService.On("GetAuthorizedPermissionsByResourceServer", mock.Anything, testUserID1,
+		mock.Anything, mock.Anything, "", []string{"reservations"}).
+		Return([]string{}, nil)
+	suite.mockRoleService.On("ExpandHeldDescendants", mock.Anything, testUserID1,
+		mock.Anything, mock.Anything, "", []string{"reservations"}).
+		Return(map[string][]string{
+			"reservations": {"reservations:create", "reservations:view"},
+		}, nil)
+
+	result, err := suite.engine.EvaluateAccess(context.Background(), request)
+
+	suite.Nil(err)
+	suite.Require().NotNil(result)
+	// Holding what is beneath a resource is not holding the resource, so the decision stands.
+	suite.False(result.Decision)
+	suite.Equal([]string{"reservations:create", "reservations:view"}, result.GrantedInstead)
+	// The engine names them in its own vocabulary; mapping them onto the public contract is the
+	// authorization service's job, not the engine's.
+	suite.Nil(result.Context)
+}
+
+// Nothing held beneath a refused permission leaves the refusal exactly as it was.
+func (suite *RBACEngineTestSuite) TestEvaluateAccessLeavesARefusalAloneWhenNothingIsHeldBeneathIt() {
+	request := AccessEvaluationRequest{
+		Subject:        Subject{ID: testUserID1},
+		ResourceServer: ResourceServer{},
+		Permission:     Permission{Name: "reservations"},
+	}
+
+	suite.mockRoleService.On("GetAuthorizedPermissionsByResourceServer", mock.Anything, testUserID1,
+		mock.Anything, mock.Anything, "", []string{"reservations"}).
+		Return([]string{}, nil)
+
+	result, err := suite.engine.EvaluateAccess(context.Background(), request)
+
+	suite.Nil(err)
+	suite.Require().NotNil(result)
+	suite.False(result.Decision)
+	suite.Nil(result.GrantedInstead)
+	suite.Nil(result.Context)
 }

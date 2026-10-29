@@ -54,11 +54,35 @@ func (e *rbacEngine) EvaluateAccessBatch(
 			return nil, fmt.Errorf("role service error: %s", svcErr.Error)
 		}
 
+		refused := make([]string, 0, len(group.indexes))
 		for _, index := range group.indexes {
 			permission := request.Evaluations[index].Permission.Name
-			evaluations[index] = AccessEvaluationResponse{
-				Decision: slices.Contains(authorizedPerms, permission),
+			decision := slices.Contains(authorizedPerms, permission)
+			evaluations[index] = AccessEvaluationResponse{Decision: decision}
+			if !decision {
+				refused = append(refused, permission)
 			}
+		}
+
+		// A refused request for a resource may still be partly answerable from what the subject
+		// holds beneath it. The decision stays false, because holding what is under a resource is
+		// not holding the resource; what the subject does hold rides alongside it, for the callers
+		// that mint a scope set rather than return the decision itself.
+		if len(refused) == 0 {
+			continue
+		}
+		expanded, svcErr := e.roleService.ExpandHeldDescendants(
+			ctx, group.subject.ID, group.subject.GroupIDs, group.subject.RoleIDs,
+			group.resourceServerID, refused)
+		if svcErr != nil {
+			return nil, fmt.Errorf("role service error: %s", svcErr.Error)
+		}
+		for _, index := range group.indexes {
+			descendants, ok := expanded[request.Evaluations[index].Permission.Name]
+			if !ok {
+				continue
+			}
+			evaluations[index].GrantedInstead = descendants
 		}
 	}
 	return &AccessEvaluationsResponse{Evaluations: evaluations}, nil

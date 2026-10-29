@@ -20,6 +20,7 @@ import (
 	"github.com/thunder-id/thunderid/internal/system/config"
 	"github.com/thunder-id/thunderid/internal/system/jose/jwt"
 	"github.com/thunder-id/thunderid/internal/system/log"
+	"github.com/thunder-id/thunderid/internal/system/security"
 )
 
 // ConsentEnforcerService is the consent enforcer. It exposes SetConsentService so the consent
@@ -55,7 +56,8 @@ func (s *consentEnforcerService) SetConsentService(consentService consent.Consen
 func (s *consentEnforcerService) ResolveConsent(ctx context.Context, ouID, appID, appName, userID string,
 	essentialAttributes, optionalAttributes, authorizedPermissions []string,
 	availableAttributes *providers.AttributesResponse, forceReprompt bool,
-	runtimeMetadata map[string][]string) (
+	runtimeMetadata map[string][]string, permissionDelimiter string,
+	substitutedPermissions []string) (
 	*providers.ConsentPromptData, *tidcommon.ServiceError) {
 	logger := s.logger.With(log.String("appID", appID), log.MaskedString(log.LoggerKeyUserID, userID))
 	logger.Debug(ctx, "Resolving consent for user")
@@ -90,7 +92,7 @@ func (s *consentEnforcerService) ResolveConsent(ctx context.Context, ouID, appID
 
 	// Build the set of elements that already have active consent. When forceReprompt is set, existing
 	// consent is ignored so every required claim is prompted again; the lookup is skipped entirely.
-	var consentedElements map[string]bool
+	var consentedElements, refusedElements map[string]bool
 	if !forceReprompt {
 		// Search for existing consent records for this user and application
 		filter := consent.ConsentFilter{
@@ -109,13 +111,20 @@ func (s *consentEnforcerService) ResolveConsent(ctx context.Context, ouID, appID
 			return nil, &tidcommon.InternalServerError
 		}
 		consentedElements = buildConsentedElementSet(existingConsents)
+		refusedElements = buildRefusedElementSet(existingConsents)
 	}
 
 	// Build a set of attributes present in the user's profile for profile filtering
 	userAttributeSet := buildUserAttributeSet(availableAttributes)
 
+	substituted := make(map[string]bool, len(substitutedPermissions))
+	for _, permission := range substitutedPermissions {
+		substituted[permission] = true
+	}
+
 	promptPurposes := buildPurposePrompts(purposes, essentialAttributes, optionalAttributes,
-		consentedElements, userAttributeSet, authorizedPermissions)
+		consentedElements, refusedElements, userAttributeSet, authorizedPermissions,
+		permissionDelimiter, substituted)
 	if len(promptPurposes) == 0 {
 		logger.Debug(ctx, "All required consents are active; no prompt needed")
 		return nil, nil
@@ -157,6 +166,10 @@ func (s *consentEnforcerService) RecordConsent(ctx context.Context, ouID, appID,
 
 	// Push denials down the decision hierarchy so everything below reads the effective value
 	applyDecisionHierarchy(decisions)
+
+	// Permissions granted in place of a broader one are a single decision, so a mixed answer is
+	// resolved before anything reads it.
+	applySubstitutedGroupDecisions(sessionData, decisions)
 
 	// Build essential element lookup and check whether any essential attribute was denied
 	essentialElements := buildEssentialElementSet(sessionData)
@@ -299,6 +312,7 @@ func (s *consentEnforcerService) createConsentSessionToken(
 			PurposeName: p.PurposeName,
 			Essential:   elementNames(p.Essential),
 			Optional:    elementNames(p.Optional),
+			Substituted: p.Substituted,
 		})
 	}
 
@@ -517,6 +531,52 @@ func buildConsentedElementSet(consents []*consent.Consent) map[string]bool {
 	return consentedSet
 }
 
+// buildRefusedElementSet collects the elements the subject was asked about and declined.
+//
+// Kept apart from the approved set because a refusal is more specific than an approval that merely
+// contains it: approving a resource and then declining one permission beneath it must leave that
+// one declined, so the refusal is consulted before any ancestor is allowed to answer for it.
+func buildRefusedElementSet(consents []*consent.Consent) map[string]bool {
+	refused := make(map[string]bool)
+	for _, c := range consents {
+		for _, p := range c.Purposes {
+			for _, e := range p.Elements {
+				if !e.IsUserApproved {
+					refused[purposeElementKey(p.Name, e.Name)] = true
+				}
+			}
+		}
+	}
+
+	return refused
+}
+
+// permissionAlreadyConsented reports whether a permission needs no further prompting: either the
+// subject approved it outright, or they approved a permission on the same resource server that
+// carries it.
+//
+// An empty delimiter makes this exact, which is what a resource server whose permissions do not
+// nest gets, and what any flow without an authorization step gets.
+func permissionAlreadyConsented(
+	purposeName, permission string, consented, refused map[string]bool, delimiter string,
+) bool {
+	if refused[purposeElementKey(purposeName, permission)] {
+		return false
+	}
+	if consented[purposeElementKey(purposeName, permission)] {
+		return true
+	}
+	for _, ancestor := range security.AncestorPermissions(permission, delimiter) {
+		if refused[purposeElementKey(purposeName, ancestor)] {
+			return false
+		}
+		if consented[purposeElementKey(purposeName, ancestor)] {
+			return true
+		}
+	}
+	return false
+}
+
 // buildUserAttributeSet builds a set of attribute names present in the user's profile.
 // When availableAttributes is nil, the returned set is empty — meaning no profile filtering is applied.
 func buildUserAttributeSet(available *providers.AttributesResponse) map[string]bool {
@@ -540,8 +600,9 @@ func purposeElementKey(purposeName, elementName string) string {
 // buildPurposePrompts dispatches each purpose to the per-namespace builder and returns the
 // prompts that still require user consent. Purposes whose Namespace was not inferred are skipped.
 func buildPurposePrompts(purposes []consent.ConsentPurpose, essentialAttributes, optionalAttributes []string,
-	consentedElements map[string]bool, userAttributeSet map[string]bool,
-	authorizedPermissions []string) []providers.ConsentPurposePrompt {
+	consentedElements, refusedElements map[string]bool, userAttributeSet map[string]bool,
+	authorizedPermissions []string, delimiter string,
+	substituted map[string]bool) []providers.ConsentPurposePrompt {
 	promptPurposes := make([]providers.ConsentPurposePrompt, 0, len(purposes))
 	for _, purpose := range purposes {
 		switch deriveConsentPromptTypeFromPurpose(purpose) {
@@ -551,8 +612,8 @@ func buildPurposePrompts(purposes []consent.ConsentPurpose, essentialAttributes,
 				promptPurposes = append(promptPurposes, prompt)
 			}
 		case consentPromptTypePermissions:
-			if prompt, ok := buildPermissionPurposePrompt(purpose, consentedElements,
-				authorizedPermissions); ok {
+			if prompt, ok := buildPermissionPurposePrompt(purpose, consentedElements, refusedElements,
+				authorizedPermissions, delimiter, substituted); ok {
 				promptPurposes = append(promptPurposes, prompt)
 			}
 		}
@@ -621,14 +682,17 @@ func buildAttributePurposePrompt(purpose consent.ConsentPurpose,
 // elements that appear in the authorized permissions and are not already consented are included.
 // Rollup parent linkage is computed server-side from the prompted-element set.
 func buildPermissionPurposePrompt(purpose consent.ConsentPurpose,
-	consentedElements map[string]bool, authorizedPermissions []string) (providers.ConsentPurposePrompt, bool) {
+	consentedElements, refusedElements map[string]bool, authorizedPermissions []string,
+	delimiter string, substituted map[string]bool) (providers.ConsentPurposePrompt, bool) {
 	prompted := make([]string, 0, len(purpose.Elements))
 	for _, elem := range purpose.Elements {
-		// Skip elements outside the user's authorized permissions or already consented
+		// Skip elements outside the user's authorized permissions, or already consented either
+		// outright or through a permission the subject approved that carries this one.
 		if !slices.Contains(authorizedPermissions, elem.Name) {
 			continue
 		}
-		if consentedElements[purposeElementKey(purpose.Name, elem.Name)] {
+		if permissionAlreadyConsented(
+			purpose.Name, elem.Name, consentedElements, refusedElements, delimiter) {
 			continue
 		}
 		prompted = append(prompted, elem.Name)
@@ -640,10 +704,7 @@ func buildPermissionPurposePrompt(purpose consent.ConsentPurpose,
 	parents := computePermissionParents(prompted)
 	optional := make([]providers.PromptElement, 0, len(prompted))
 	for _, name := range prompted {
-		optional = append(optional, providers.PromptElement{
-			Name:   name,
-			Parent: parents[name],
-		})
+		optional = append(optional, providers.PromptElement{Name: name, Parent: parents[name]})
 	}
 
 	return providers.ConsentPurposePrompt{
@@ -652,7 +713,28 @@ func buildPermissionPurposePrompt(purpose consent.ConsentPurpose,
 		Description: purpose.Description,
 		Type:        consentPromptTypePermissions,
 		Optional:    optional,
+		// Named separately rather than marked essential. Essential elements fail the whole
+		// authorization when refused, and refusing a permission should drop that permission, not
+		// the login. These stay optional and are answered together.
+		Substituted: substitutedNames(prompted, substituted),
 	}, true
+}
+
+// substitutedNames returns the prompted permissions that were granted in place of a broader one.
+func substitutedNames(prompted []string, substituted map[string]bool) []string {
+	if len(substituted) == 0 {
+		return nil
+	}
+	names := make([]string, 0, len(prompted))
+	for _, name := range prompted {
+		if substituted[name] {
+			names = append(names, name)
+		}
+	}
+	if len(names) == 0 {
+		return nil
+	}
+	return names
 }
 
 // computePermissionParents returns each permission's rollup parent within the supplied set, or ""
@@ -864,4 +946,56 @@ func elementNames(elements []providers.PromptElement) []string {
 		names = append(names, e.Name)
 	}
 	return names
+}
+
+// applySubstitutedGroupDecisions resolves each purpose's substituted permissions to one answer.
+//
+// They were granted in place of a broader permission the client asked for, and the user was asked
+// about them as a group. A mixed answer can only come from a client that ignored that, and granting
+// an arbitrary part of a set the user never chose to assemble is worse than either whole answer.
+// Refusing any member refuses them all, which is the narrower reading.
+func applySubstitutedGroupDecisions(
+	session *consentSessionData, decisions *providers.ConsentDecisions,
+) {
+	if session == nil || decisions == nil {
+		return
+	}
+
+	substitutedByPurpose := make(map[string]map[string]bool, len(session.Purposes))
+	for _, purpose := range session.Purposes {
+		if len(purpose.Substituted) == 0 {
+			continue
+		}
+		members := make(map[string]bool, len(purpose.Substituted))
+		for _, name := range purpose.Substituted {
+			members[name] = true
+		}
+		substitutedByPurpose[purpose.PurposeName] = members
+	}
+	if len(substitutedByPurpose) == 0 {
+		return
+	}
+
+	for i := range decisions.Purposes {
+		purpose := &decisions.Purposes[i]
+		members, ok := substitutedByPurpose[purpose.PurposeName]
+		if !ok {
+			continue
+		}
+		refused := false
+		for _, element := range purpose.Elements {
+			if members[element.Name] && !element.Approved {
+				refused = true
+				break
+			}
+		}
+		if !refused {
+			continue
+		}
+		for j := range purpose.Elements {
+			if members[purpose.Elements[j].Name] {
+				purpose.Elements[j].Approved = false
+			}
+		}
+	}
 }

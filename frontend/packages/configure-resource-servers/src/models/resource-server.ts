@@ -42,6 +42,8 @@ export interface ResourceServer {
   identifier: string;
   ouId: string;
   delimiter: string;
+  /** Whether a granted permission on this server authorizes the permissions beneath it. */
+  hierarchicalPermissions?: boolean;
   isReadOnly?: boolean;
   type: ResourceServerType;
   authorizationEngine?: AuthorizationEngineConfig;
@@ -96,6 +98,7 @@ export interface CreateResourceServerRequest {
   description?: string;
   identifier: string;
   delimiter?: PermissionDelimiter;
+  hierarchicalPermissions?: boolean;
   ouId: string;
   type?: ResourceServerType;
 }
@@ -105,6 +108,11 @@ export interface UpdateResourceServerRequest {
   description?: string | null;
   identifier: string;
   ouId: string;
+  /**
+   * Omitting this turns hierarchical matching off, so every caller has to send the resource
+   * server's current value even when it is editing something unrelated.
+   */
+  hierarchicalPermissions?: boolean;
   authorizationEngine?: AuthorizationEngineConfig;
 }
 

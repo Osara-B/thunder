@@ -65,6 +65,7 @@ export default function CreateResourceServerPage(): JSX.Element {
   const [name, setName] = useState('');
   const [identifier, setIdentifier] = useState('');
   const [delimiter, setDelimiter] = useState<PermissionDelimiter>(DEFAULT_PERMISSION_DELIMITER);
+  const [hierarchicalPermissions, setHierarchicalPermissions] = useState(false);
   const [ouId, setOuId] = useState('');
   const [error, setError] = useState<string | null>(null);
   // Only the user's explicit choice is stored. Until they make one it derives from the config, which
@@ -220,6 +221,7 @@ export default function CreateResourceServerPage(): JSX.Element {
       ouId: resolvedOuId,
       type: selectedType,
       delimiter,
+      hierarchicalPermissions,
     };
 
     // Guard on the same conditions the checkbox renders under, so a type change after ticking it
@@ -332,6 +334,8 @@ export default function CreateResourceServerPage(): JSX.Element {
         return (
           <ConfigureSeparator
             delimiter={delimiter}
+            hierarchicalPermissions={hierarchicalPermissions}
+            onHierarchicalPermissionsChange={setHierarchicalPermissions}
             onDelimiterChange={handleDelimiterChange}
             onReadyChange={handleSeparatorReadyChange}
           />

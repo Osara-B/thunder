@@ -48,6 +48,7 @@ interface EditedFields {
   identifier: string;
   authorizationEngine: AuthorizationEngine;
   pdpConnectionId: string;
+  hierarchicalPermissions: boolean;
 }
 
 interface TabPanelProps {
@@ -125,6 +126,7 @@ export default function ResourceServerEditPage(): JSX.Element {
       identifier: resourceServer?.identifier,
       authorizationEngine: resourceServer?.authorizationEngine?.type ?? AuthorizationEngines.RBAC,
       pdpConnectionId: resourceServer?.authorizationEngine?.properties?.pdpConnectionId,
+      hierarchicalPermissions: resourceServer?.hierarchicalPermissions ?? false,
     };
     return Object.entries(editedFields).some(
       ([key, value]) => !isEqualIgnoringEmpty(norm(value), norm(originalOf[key])),
@@ -170,6 +172,9 @@ export default function ResourceServerEditPage(): JSX.Element {
               : (resourceServer.description ?? null),
           identifier: 'identifier' in editedFields ? nextIdentifier : resourceServer.identifier,
           ouId: resourceServer.ouId,
+          // Sent on every save, not only when it changed: the server reads an absent value as off.
+          hierarchicalPermissions:
+            editedFields.hierarchicalPermissions ?? resourceServer.hierarchicalPermissions ?? false,
           authorizationEngine: {
             type: authorizationEngineType,
             ...(authorizationEngineType === AuthorizationEngines.AUTHZEN_PDP ? {properties: {pdpConnectionId}} : {}),
@@ -449,6 +454,10 @@ export default function ResourceServerEditPage(): JSX.Element {
             editedFields.pdpConnectionId ?? resourceServer.authorizationEngine?.properties?.pdpConnectionId ?? ''
           }
           isIdentifierInvalid={isIdentifierInvalid}
+          hierarchicalPermissions={
+            editedFields.hierarchicalPermissions ?? resourceServer.hierarchicalPermissions ?? false
+          }
+          onHierarchicalPermissionsChange={(v) => handleFieldChange('hierarchicalPermissions', v)}
           onIdentifierChange={(v) => handleFieldChange('identifier', v)}
           onAuthorizationEngineChange={(v) => handleFieldChange('authorizationEngine', v)}
           onPDPConnectionChange={(v) => handleFieldChange('pdpConnectionId', v)}

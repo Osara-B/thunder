@@ -343,14 +343,15 @@ func (rs *resourceService) CreateResourceServer(
 		}
 
 		createdRS = &providers.ResourceServer{
-			ID:                  id,
-			Name:                resourceServer.Name,
-			Description:         resourceServer.Description,
-			Identifier:          resourceServer.Identifier,
-			Type:                resourceServer.Type,
-			OUID:                resourceServer.OUID,
-			Delimiter:           resourceServer.Delimiter,
-			AuthorizationEngine: resourceServer.AuthorizationEngine,
+			ID:                      id,
+			Name:                    resourceServer.Name,
+			Description:             resourceServer.Description,
+			Identifier:              resourceServer.Identifier,
+			Type:                    resourceServer.Type,
+			OUID:                    resourceServer.OUID,
+			Delimiter:               resourceServer.Delimiter,
+			HierarchicalPermissions: resourceServer.HierarchicalPermissions,
+			AuthorizationEngine:     resourceServer.AuthorizationEngine,
 		}
 		return nil
 	}); err != nil {
@@ -535,14 +536,15 @@ func (rs *resourceService) UpdateResourceServer(
 		}
 
 		updatedRS = &providers.ResourceServer{
-			ID:                  id,
-			Name:                resourceServer.Name,
-			Description:         resourceServer.Description,
-			Identifier:          resourceServer.Identifier,
-			Type:                resourceServer.Type,
-			OUID:                resourceServer.OUID,
-			Delimiter:           resourceServer.Delimiter,
-			AuthorizationEngine: resourceServer.AuthorizationEngine,
+			ID:                      id,
+			Name:                    resourceServer.Name,
+			Description:             resourceServer.Description,
+			Identifier:              resourceServer.Identifier,
+			Type:                    resourceServer.Type,
+			OUID:                    resourceServer.OUID,
+			Delimiter:               resourceServer.Delimiter,
+			HierarchicalPermissions: resourceServer.HierarchicalPermissions,
+			AuthorizationEngine:     resourceServer.AuthorizationEngine,
 		}
 		return nil
 	}); err != nil {

@@ -67,12 +67,13 @@ func (h *resourceHandler) HandleResourceServerPostRequest(w http.ResponseWriter,
 
 	sanitized := sanitizeCreateResourceServerRequest(req)
 	serviceReq := providers.ResourceServer{
-		Name:        sanitized.Name,
-		Description: sanitized.Description,
-		Identifier:  sanitized.Identifier,
-		Type:        sanitized.Type,
-		OUID:        sanitized.OUID,
-		Delimiter:   sanitized.Delimiter,
+		Name:                    sanitized.Name,
+		Description:             sanitized.Description,
+		Identifier:              sanitized.Identifier,
+		Type:                    sanitized.Type,
+		OUID:                    sanitized.OUID,
+		Delimiter:               sanitized.Delimiter,
+		HierarchicalPermissions: sanitized.HierarchicalPermissions,
 	}
 
 	result, svcErr := h.resourceService.CreateResourceServer(ctx, serviceReq)
@@ -116,11 +117,12 @@ func (h *resourceHandler) HandleResourceServerPutRequest(w http.ResponseWriter, 
 
 	sanitized := sanitizeUpdateResourceServerRequest(req)
 	serviceReq := providers.ResourceServer{
-		Name:                sanitized.Name,
-		Description:         sanitized.Description,
-		Identifier:          sanitized.Identifier,
-		OUID:                sanitized.OUID,
-		AuthorizationEngine: sanitized.AuthorizationEngine,
+		Name:                    sanitized.Name,
+		Description:             sanitized.Description,
+		Identifier:              sanitized.Identifier,
+		OUID:                    sanitized.OUID,
+		HierarchicalPermissions: sanitized.HierarchicalPermissions,
+		AuthorizationEngine:     sanitized.AuthorizationEngine,
 	}
 
 	result, svcErr := h.resourceService.UpdateResourceServer(ctx, id, serviceReq)
@@ -596,23 +598,25 @@ func handleError(ctx context.Context, w http.ResponseWriter, svcErr *tidcommon.S
 // sanitizeCreateResourceServerRequest sanitizes input for creating a resource server.
 func sanitizeCreateResourceServerRequest(req *CreateResourceServerRequest) CreateResourceServerRequest {
 	return CreateResourceServerRequest{
-		Name:        sysutils.SanitizeString(req.Name),
-		Description: sysutils.SanitizeString(req.Description),
-		Identifier:  sysutils.SanitizeString(req.Identifier),
-		Type:        req.Type,
-		OUID:        sysutils.SanitizeString(req.OUID),
-		Delimiter:   sysutils.SanitizeString(req.Delimiter),
+		Name:                    sysutils.SanitizeString(req.Name),
+		Description:             sysutils.SanitizeString(req.Description),
+		Identifier:              sysutils.SanitizeString(req.Identifier),
+		Type:                    req.Type,
+		OUID:                    sysutils.SanitizeString(req.OUID),
+		Delimiter:               sysutils.SanitizeString(req.Delimiter),
+		HierarchicalPermissions: req.HierarchicalPermissions,
 	}
 }
 
 // sanitizeUpdateResourceServerRequest sanitizes input for updating a resource server.
 func sanitizeUpdateResourceServerRequest(req *UpdateResourceServerRequest) UpdateResourceServerRequest {
 	return UpdateResourceServerRequest{
-		Name:                sysutils.SanitizeString(req.Name),
-		Description:         sysutils.SanitizeString(req.Description),
-		Identifier:          sysutils.SanitizeString(req.Identifier),
-		OUID:                sysutils.SanitizeString(req.OUID),
-		AuthorizationEngine: sanitizeAuthorizationEngine(req.AuthorizationEngine),
+		HierarchicalPermissions: req.HierarchicalPermissions,
+		Name:                    sysutils.SanitizeString(req.Name),
+		Description:             sysutils.SanitizeString(req.Description),
+		Identifier:              sysutils.SanitizeString(req.Identifier),
+		OUID:                    sysutils.SanitizeString(req.OUID),
+		AuthorizationEngine:     sanitizeAuthorizationEngine(req.AuthorizationEngine),
 	}
 }
 
@@ -675,15 +679,16 @@ func toResourceServerResponse(rs *providers.ResourceServer) *ResourceServerRespo
 		resType = providers.ResourceServerTypeCustom
 	}
 	return &ResourceServerResponse{
-		ID:                  rs.ID,
-		Name:                rs.Name,
-		Description:         rs.Description,
-		Identifier:          rs.Identifier,
-		Type:                resType,
-		OUID:                rs.OUID,
-		Delimiter:           rs.Delimiter,
-		AuthorizationEngine: rs.AuthorizationEngine,
-		IsReadOnly:          rs.IsReadOnly,
+		ID:                      rs.ID,
+		Name:                    rs.Name,
+		Description:             rs.Description,
+		Identifier:              rs.Identifier,
+		Type:                    resType,
+		OUID:                    rs.OUID,
+		Delimiter:               rs.Delimiter,
+		HierarchicalPermissions: rs.HierarchicalPermissions,
+		AuthorizationEngine:     rs.AuthorizationEngine,
+		IsReadOnly:              rs.IsReadOnly,
 	}
 }
 

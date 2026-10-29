@@ -27,6 +27,7 @@ import (
 	"github.com/thunder-id/thunderid/internal/role"
 	"github.com/thunder-id/thunderid/internal/system/jose/jwt"
 	"github.com/thunder-id/thunderid/internal/system/log"
+	"github.com/thunder-id/thunderid/internal/system/security"
 )
 
 const (
@@ -814,29 +815,57 @@ func (a *authAssertExecutor) appendRolesToClaims(
 func (a *authAssertExecutor) resolvePermissionsForClaim(ctx *providers.NodeContext) string {
 	if v, ok := ctx.RuntimeData[common.RuntimeKeyConsentedPermissions]; ok {
 		if authorized, hasAuthorized := ctx.RuntimeData["authorized_permissions"]; hasAuthorized {
-			return intersectPermissionSpaceList(v, authorized)
+			return consentedSubset(authorized, v,
+				ctx.RuntimeData[common.RuntimeKeyRefusedPermissions],
+				ctx.RuntimeData[common.RuntimeKeyPermissionDelimiter])
 		}
 		return v
 	}
 	return ctx.RuntimeData["authorized_permissions"]
 }
 
-// intersectPermissionSpaceList returns the space-separated set of permissions present in both
-// inputs, preserving the order of `a`. Empty inputs are handled as empty sets.
-func intersectPermissionSpaceList(a, b string) string {
-	if a == "" || b == "" {
+// consentedSubset returns the authorized permissions the subject consented to, preserving the order
+// they were authorized in.
+//
+// A consented permission answers for the ones it carries, so approving a resource covers a
+// permission beneath it without that one having been listed. A refusal outranks an approval that
+// merely contains it, read outwards from the permission itself, so declining one permission beneath
+// an approved resource leaves that one declined rather than restored by the resource above it.
+//
+// The subject is only ever asked about permissions they are authorized for, so a consent broad
+// enough to cover something cannot widen what is issued beyond what the roles already allowed.
+//
+// An empty delimiter compares exactly, which is what a resource server whose permissions do not
+// nest gets, and what a flow with no authorization step gets.
+func consentedSubset(authorized, consented, refused, delimiter string) string {
+	if authorized == "" || consented == "" {
 		return ""
 	}
-	allowed := make(map[string]bool)
-	for _, p := range strings.Fields(b) {
-		allowed[p] = true
-	}
-	out := make([]string, 0, len(allowed))
-	for _, p := range strings.Fields(a) {
-		if allowed[p] {
-			out = append(out, p)
-			delete(allowed, p)
+	approvedSet := fieldSet(consented)
+	refusedSet := fieldSet(refused)
+
+	authorizedPermissions := strings.Fields(authorized)
+	out := make([]string, 0, len(authorizedPermissions))
+	seen := make(map[string]struct{}, len(authorizedPermissions))
+	for _, permission := range authorizedPermissions {
+		if _, duplicate := seen[permission]; duplicate {
+			continue
 		}
+		if !security.PermissionDecision(permission, approvedSet, refusedSet, delimiter) {
+			continue
+		}
+		seen[permission] = struct{}{}
+		out = append(out, permission)
 	}
 	return strings.Join(out, " ")
+}
+
+// fieldSet splits a space-separated permission list into a set.
+func fieldSet(permissions string) map[string]struct{} {
+	fields := strings.Fields(permissions)
+	set := make(map[string]struct{}, len(fields))
+	for _, field := range fields {
+		set[field] = struct{}{}
+	}
+	return set
 }

@@ -1973,23 +1973,23 @@ func (suite *AuthAssertExecutorTestSuite) TestResolvePermissionsForClaim_Interse
 	assert.Equal(suite.T(), "read cancel", got)
 }
 
-func (suite *AuthAssertExecutorTestSuite) TestIntersectPermissionSpaceList_EmptyInputs() {
-	assert.Equal(suite.T(), "", intersectPermissionSpaceList("", "a b"))
-	assert.Equal(suite.T(), "", intersectPermissionSpaceList("a b", ""))
-	assert.Equal(suite.T(), "", intersectPermissionSpaceList("", ""))
+func (suite *AuthAssertExecutorTestSuite) TestConsentedSubset_EmptyInputs() {
+	assert.Equal(suite.T(), "", consentedSubset("", "a b", "", ""))
+	assert.Equal(suite.T(), "", consentedSubset("a b", "", "", ""))
+	assert.Equal(suite.T(), "", consentedSubset("", "", "", ""))
 }
 
-func (suite *AuthAssertExecutorTestSuite) TestIntersectPermissionSpaceList_PreservesOrderOfFirstArg() {
-	assert.Equal(suite.T(), "c a", intersectPermissionSpaceList("c a b", "a c"))
+func (suite *AuthAssertExecutorTestSuite) TestConsentedSubset_PreservesOrderOfFirstArg() {
+	assert.Equal(suite.T(), "c a", consentedSubset("c a b", "a c", "", ""))
 }
 
-func (suite *AuthAssertExecutorTestSuite) TestIntersectPermissionSpaceList_DropsDuplicates() {
+func (suite *AuthAssertExecutorTestSuite) TestConsentedSubset_DropsDuplicates() {
 	// Defensive dedup: if `a` has duplicates, each token appears at most once in the result.
-	assert.Equal(suite.T(), "x y", intersectPermissionSpaceList("x y x y", "x y"))
+	assert.Equal(suite.T(), "x y", consentedSubset("x y x y", "x y", "", ""))
 }
 
-func (suite *AuthAssertExecutorTestSuite) TestIntersectPermissionSpaceList_NoOverlap() {
-	assert.Equal(suite.T(), "", intersectPermissionSpaceList("a b", "c d"))
+func (suite *AuthAssertExecutorTestSuite) TestConsentedSubset_NoOverlap() {
+	assert.Equal(suite.T(), "", consentedSubset("a b", "c d", "", ""))
 }
 
 func (suite *AuthAssertExecutorTestSuite) TestResolveSubject() {
@@ -2277,4 +2277,66 @@ func (suite *AuthAssertExecutorTestSuite) TestExecute_UnresolvedEntityReferenceI
 				mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 		})
 	}
+}
+
+// A permission the subject approved answers for the ones it carries, so a consent given at the
+// resource is not undone by the token being issued for something beneath it.
+func (suite *AuthAssertExecutorTestSuite) TestConsentedSubset_ConsentToAResourceCoversWhatIsBeneathIt() {
+	assert.Equal(suite.T(), "reservations:create reservations:view",
+		consentedSubset("reservations:create reservations:view", "reservations", "", ":"))
+}
+
+// Without a delimiter the comparison is exact, which is what a resource server whose permissions do
+// not nest gets, and what a flow with no authorization step gets.
+func (suite *AuthAssertExecutorTestSuite) TestConsentedSubset_ExactWithoutADelimiter() {
+	assert.Equal(suite.T(), "", consentedSubset("reservations:create", "reservations", "", ""))
+}
+
+// Consent never widens what the roles allowed: the subject is only asked about permissions they are
+// already authorized for, so nothing outside that set can appear.
+func (suite *AuthAssertExecutorTestSuite) TestConsentedSubset_NeverWidensBeyondAuthorized() {
+	assert.Equal(suite.T(), "reservations:view",
+		consentedSubset("reservations:view", "reservations", "", ":"))
+}
+
+// A refusal outranks an approval that merely contains it, so declining one permission beneath an
+// approved resource leaves that one declined rather than restored by the resource above it.
+func (suite *AuthAssertExecutorTestSuite) TestConsentedSubset_RefusalBeneathAnApprovalIsNotIssued() {
+	assert.Equal(suite.T(), "reservations reservations:view",
+		consentedSubset(
+			"reservations reservations:create reservations:view",
+			"reservations",
+			"reservations:create",
+			":",
+		))
+}
+
+// Read outwards from the permission, the nearer decision wins, so an approval closer to it survives
+// a refusal higher up.
+func (suite *AuthAssertExecutorTestSuite) TestConsentedSubset_NearerApprovalBeatsAFartherRefusal() {
+	assert.Equal(suite.T(), "reservations:online:create",
+		consentedSubset(
+			"reservations:online:create",
+			"reservations:online",
+			"reservations",
+			":",
+		))
+}
+
+// The same refusal on a resource server whose permissions do not nest only removes itself.
+func (suite *AuthAssertExecutorTestSuite) TestConsentedSubset_RefusalIsExactWithoutADelimiter() {
+	assert.Equal(suite.T(), "reservations",
+		consentedSubset("reservations reservations:create", "reservations", "reservations:create", ""))
+}
+
+// The whole path: a declined permission the approved resource covers must not reach the claim.
+func (suite *AuthAssertExecutorTestSuite) TestResolvePermissionsForClaim_HonoursARefusalBeneathAnApproval() {
+	ctx := &providers.NodeContext{RuntimeData: map[string]string{
+		common.RuntimeKeyConsentedPermissions: "reservations",
+		common.RuntimeKeyRefusedPermissions:   "reservations:create",
+		common.RuntimeKeyPermissionDelimiter:  ":",
+		"authorized_permissions":              "reservations reservations:create reservations:view",
+	}}
+	assert.Equal(suite.T(), "reservations reservations:view",
+		(&authAssertExecutor{}).resolvePermissionsForClaim(ctx))
 }

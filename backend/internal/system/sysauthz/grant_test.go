@@ -35,6 +35,24 @@ type stubPermissionResolver struct {
 	rolePerms security.PermissionSet
 	roleErr   error
 	roleCalls int
+
+	// delimiters is what the resource servers being granted on report. Left nil, every resource
+	// server named is reported as ":"-delimited, which is what the system one is and what the cases
+	// below are about. Set it to express a resource server whose permissions do not nest.
+	delimiters map[string]string
+}
+
+func (s *stubPermissionResolver) ResolveDelimiters(
+	_ context.Context, resourceServerIDs []string,
+) map[string]string {
+	if s.delimiters != nil {
+		return s.delimiters
+	}
+	defaults := make(map[string]string, len(resourceServerIDs))
+	for _, id := range resourceServerIDs {
+		defaults[id] = ":"
+	}
+	return defaults
 }
 
 func (r *stubPermissionResolver) ResolveForEntity(
@@ -461,4 +479,35 @@ func TestGrantsNothing(t *testing.T) {
 			assert.Equal(t, tt.want, grantsNothing(tt.granted))
 		})
 	}
+}
+
+// Whether one permission confers another belongs to the resource server. A grant on one whose
+// permissions do not nest is compared exactly, so holding a resource does not approve granting
+// something beneath it.
+func TestCanGrantPermissions_ExactWhenTheResourceServerIsNotHierarchical(t *testing.T) {
+	resolver := &stubPermissionResolver{
+		entityPerms: security.PermissionSet{escRSSystem: {"reservations"}},
+		delimiters:  map[string]string{}, // named by nothing: every comparison is exact
+	}
+	svc := newGuardService(resolver)
+
+	svcErr := svc.CanGrantPermissions(callerWith("david", "system:group"),
+		security.PermissionSet{escRSSystem: {"reservations:create"}})
+
+	require.NotNil(t, svcErr)
+	assert.Equal(t, ErrorGrantNotPermitted.Code, svcErr.Code)
+}
+
+// Told the delimiter, the same grant is approved, since the caller does hold what it confers.
+func TestCanGrantPermissions_CoveredWhenTheResourceServerIsHierarchical(t *testing.T) {
+	resolver := &stubPermissionResolver{
+		entityPerms: security.PermissionSet{escRSSystem: {"reservations"}},
+		delimiters:  map[string]string{escRSSystem: ":"},
+	}
+	svc := newGuardService(resolver)
+
+	svcErr := svc.CanGrantPermissions(callerWith("david", "system:group"),
+		security.PermissionSet{escRSSystem: {"reservations:create"}})
+
+	assert.Nil(t, svcErr)
 }

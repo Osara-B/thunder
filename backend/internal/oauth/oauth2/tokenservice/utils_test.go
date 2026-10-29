@@ -1288,3 +1288,42 @@ func (suite *UtilsTestSuite) TestBuildAccessEvaluationsRequest_SetsTheContextOnE
 	request = BuildAccessEvaluationsRequest("app-1", "app", nil, nil, []string{"read"}, "rs-1", nil)
 	suite.Nil(request.Evaluations[0].Context, "no context is sent when there is none")
 }
+
+// A refused scope that reports permissions the subject holds beneath it yields those instead, so a
+// client asking for a resource receives the part of it the subject can satisfy.
+func TestFilterAuthorizedScopesSubstitutesHeldDescendants(t *testing.T) {
+	scopes := []string{"reservations", "invoices:read"}
+	evaluations := []providers.AccessEvaluationResponse{
+		{Decision: false, Context: map[string]interface{}{
+			providers.ContextKeyGrantedInstead: []string{"reservations:create", "reservations:view"},
+		}},
+		{Decision: true},
+	}
+
+	granted := FilterAuthorizedScopes(scopes, evaluations)
+
+	// The resource itself is never substituted in: holding what is beneath it is not holding it.
+	assert.Equal(t, []string{"reservations:create", "reservations:view", "invoices:read"}, granted)
+}
+
+// A refusal with nothing beneath it contributes nothing, exactly as before.
+func TestFilterAuthorizedScopesLeavesAPlainRefusalAlone(t *testing.T) {
+	granted := FilterAuthorizedScopes(
+		[]string{"reservations"}, []providers.AccessEvaluationResponse{{Decision: false}})
+
+	assert.Empty(t, granted)
+}
+
+// The context crosses an engine boundary that may have been serialized, so the decoded shape has to
+// be read as well as the in-process one.
+func TestFilterAuthorizedScopesReadsADecodedContext(t *testing.T) {
+	evaluations := []providers.AccessEvaluationResponse{
+		{Decision: false, Context: map[string]interface{}{
+			providers.ContextKeyGrantedInstead: []interface{}{"reservations:create"},
+		}},
+	}
+
+	granted := FilterAuthorizedScopes([]string{"reservations"}, evaluations)
+
+	assert.Equal(t, []string{"reservations:create"}, granted)
+}

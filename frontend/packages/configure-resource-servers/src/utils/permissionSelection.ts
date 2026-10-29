@@ -24,6 +24,62 @@ export function ancestorPermissions(permission: string, delimiter: string): stri
   return segments.slice(0, -1).map((_, index) => segments.slice(0, index + 1).join(delimiter));
 }
 
+/**
+ * Reports whether a permission is selected outright or conferred by a selected ancestor. Granting a
+ * resource grants everything beneath it, so a descendant of a selected resource is held even though
+ * it is not listed.
+ */
+export function isPermissionCovered(
+  list: ResourcePermissions[],
+  resourceServerId: string,
+  permission: string,
+  delimiter: string,
+): boolean {
+  if (isPermissionSelected(list, resourceServerId, permission)) return true;
+  return ancestorPermissions(permission, delimiter).some((ancestor) =>
+    isPermissionSelected(list, resourceServerId, ancestor),
+  );
+}
+
+/**
+ * Selects or clears a resource's permission, which carries its whole subtree.
+ *
+ * Selecting it drops any descendant already listed, since the resource now confers them and listing
+ * them as well adds nothing.
+ *
+ * Clearing it drops its ancestors as well, because leaving one behind would keep conferring what was
+ * just cleared, and its descendants, because a role written before resources carried their subtree
+ * lists every descendant individually and clearing the resource should release those too.
+ */
+export function toggleSubtreePermission(
+  list: ResourcePermissions[],
+  resourceServerId: string,
+  permission: string,
+  delimiter: string,
+): ResourcePermissions[] {
+  const existing = list.find((entry) => entry.resourceServerId === resourceServerId);
+  if (!existing) {
+    return [...list, {resourceServerId, permissions: [permission]}];
+  }
+
+  const prefix = `${permission}${delimiter}`;
+  let updatedPermissions: string[];
+  if (isPermissionCovered(list, resourceServerId, permission, delimiter)) {
+    const removed = new Set([permission, ...ancestorPermissions(permission, delimiter)]);
+    updatedPermissions = existing.permissions.filter((p) => !removed.has(p) && !p.startsWith(prefix));
+  } else {
+    updatedPermissions = [...existing.permissions.filter((p) => !p.startsWith(prefix)), permission];
+  }
+
+  if (updatedPermissions.length === 0) {
+    return list.filter((entry) => entry.resourceServerId !== resourceServerId);
+  }
+
+  return list.map((entry) =>
+    entry.resourceServerId === resourceServerId ? {...entry, permissions: updatedPermissions} : entry,
+  );
+}
+
 export function togglePermission(
   list: ResourcePermissions[],
   resourceServerId: string,

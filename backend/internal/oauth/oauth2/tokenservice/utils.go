@@ -784,12 +784,34 @@ func BuildAccessEvaluationsRequest(
 	return providers.AccessEvaluationsRequest{Evaluations: evaluations}
 }
 
-// FilterAuthorizedScopes returns the scopes whose corresponding evaluation (by index) was granted.
+// FilterAuthorizedScopes returns the scopes whose corresponding evaluation (by index) was granted,
+// substituting what the subject holds beneath a scope that was refused.
+//
+// A refused scope may still carry permissions the subject holds under it, which the evaluation
+// reports alongside the refusal. Granting those is narrower than granting the scope that was asked
+// for: it is exactly the part of the request the subject can satisfy, and never the resource itself.
+// A refusal with nothing beneath it contributes nothing, as before.
 func FilterAuthorizedScopes(scopes []string, evaluations []providers.AccessEvaluationResponse) []string {
 	authorizedScopes := make([]string, 0, len(evaluations))
+	seen := make(map[string]bool, len(evaluations))
+	appendScope := func(scope string) {
+		if scope == "" || seen[scope] {
+			return
+		}
+		seen[scope] = true
+		authorizedScopes = append(authorizedScopes, scope)
+	}
+
 	for i, evaluation := range evaluations {
-		if evaluation.Decision && i < len(scopes) {
-			authorizedScopes = append(authorizedScopes, scopes[i])
+		if i >= len(scopes) {
+			continue
+		}
+		if evaluation.Decision {
+			appendScope(scopes[i])
+			continue
+		}
+		for _, substituted := range providers.GrantedInstead(evaluation.Context) {
+			appendScope(substituted)
 		}
 	}
 	return authorizedScopes

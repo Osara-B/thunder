@@ -5711,3 +5711,43 @@ ouHandle: default
 		t.Errorf("OUID = %q, want empty (resolution happens later)", rs.OUID)
 	}
 }
+
+// Whether permissions nest can be changed after creation. It decides how grants on this resource
+// server are read at evaluation time rather than being fixed into them, so the change takes effect
+// without rewriting any role. The delimiter it reads them with stays fixed, since the permission
+// strings were built from it.
+func (suite *ResourceServiceTestSuite) TestUpdateResourceServer_UpdatesHierarchicalPermissions() {
+	rs := providers.ResourceServer{
+		Name:                    "updated-rs",
+		Identifier:              "original-identifier",
+		OUID:                    "ou-123",
+		HierarchicalPermissions: true,
+		Delimiter:               "/", // Ignored: the delimiter stays as created.
+	}
+
+	existingRS := providers.ResourceServer{
+		ID:                      "rs-123",
+		Name:                    "old-name",
+		Identifier:              "original-identifier",
+		OUID:                    "ou-123",
+		Delimiter:               ":",
+		HierarchicalPermissions: false,
+	}
+
+	suite.mockStore.On("IsResourceServerDeclarative", "rs-123").Return(false)
+	suite.mockStore.On("GetResourceServer", mock.Anything, "rs-123").Return(existingRS, nil)
+	suite.mockOU.On("GetOrganizationUnit", mock.Anything, "ou-123").
+		Return(oupkg.OrganizationUnit{ID: "ou-123"}, nil)
+	suite.mockStore.On("CheckResourceServerNameExists", mock.Anything, "updated-rs").Return(false, nil)
+	suite.mockStore.On("UpdateResourceServer", mock.Anything,
+		"rs-123", mock.MatchedBy(func(r providers.ResourceServer) bool {
+			return r.HierarchicalPermissions && r.Delimiter == ":"
+		})).Return(nil)
+
+	result, err := suite.service.UpdateResourceServer(context.Background(), "rs-123", rs)
+
+	suite.Nil(err)
+	suite.Require().NotNil(result)
+	suite.True(result.HierarchicalPermissions)
+	suite.mockStore.AssertExpectations(suite.T())
+}

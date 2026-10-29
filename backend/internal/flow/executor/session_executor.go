@@ -349,8 +349,12 @@ func (e *sessionExecutor) loadCheckpoint(ctx *providers.NodeContext, execResp *p
 // observed to break attribute release; it should move to a central place when the flow-context data
 // classification is implemented.
 var requestScopedSnapshotDenyList = map[string]struct{}{
-	common.RuntimeKeyRequestedPermissions:        {},
-	common.RuntimeKeyResourceServerIdentifier:    {},
+	common.RuntimeKeyRequestedPermissions:     {},
+	common.RuntimeKeyResourceServerIdentifier: {},
+	// Derived from the resource server above and only meaningful for it. Replayed onto an app
+	// bound to a different one, it would have consent and the assertion compare that app's
+	// permissions by a relation its resource server never declared.
+	common.RuntimeKeyPermissionDelimiter:         {},
 	common.RuntimeKeyRequiredEssentialAttributes: {},
 	common.RuntimeKeyRequiredOptionalAttributes:  {},
 	common.RuntimeKeyRequiredLocales:             {},

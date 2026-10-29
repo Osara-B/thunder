@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
 
@@ -94,7 +95,7 @@ func (s *ConsentEnforcerServiceTestSuite) TestResolveConsent_ListPurposesClientE
 	s.mockConsentSvc.On("ListPurposes", mock.Anything, mock.Anything).Return(nil, clientErr)
 
 	result, svcErr := s.service.ResolveConsent(context.Background(), "ou1", "app1", "App 1", "user1",
-		[]string{"email"}, nil, nil, nil, false, nil)
+		[]string{"email"}, nil, nil, nil, false, nil, "", nil)
 
 	s.Nil(result)
 	s.NotNil(svcErr)
@@ -110,7 +111,7 @@ func (s *ConsentEnforcerServiceTestSuite) TestResolveConsent_ListPurposesServerE
 	s.mockConsentSvc.On("ListPurposes", mock.Anything, mock.Anything).Return(nil, serverErr)
 
 	result, svcErr := s.service.ResolveConsent(context.Background(), "ou1", "app1", "App 1", "user1",
-		[]string{"email"}, nil, nil, nil, false, nil)
+		[]string{"email"}, nil, nil, nil, false, nil, "", nil)
 
 	s.Nil(result)
 	s.NotNil(svcErr)
@@ -124,7 +125,7 @@ func (s *ConsentEnforcerServiceTestSuite) TestResolveConsent_PassesGroupIDFilter
 
 	// No purposes and no authorized permissions -> consent is skipped.
 	result, svcErr := s.service.ResolveConsent(context.Background(), "ou1", "app1", "App 1", "user1",
-		[]string{"email"}, nil, nil, nil, false, nil)
+		[]string{"email"}, nil, nil, nil, false, nil, "", nil)
 
 	s.Nil(result)
 	s.Nil(svcErr)
@@ -135,7 +136,7 @@ func (s *ConsentEnforcerServiceTestSuite) TestResolveConsent_NoPurposesConfigure
 		Return([]consent.ConsentPurpose{}, nil)
 
 	result, svcErr := s.service.ResolveConsent(context.Background(), "ou1", "app1", "App 1", "user1",
-		[]string{"email"}, nil, nil, nil, false, nil)
+		[]string{"email"}, nil, nil, nil, false, nil, "", nil)
 
 	s.Nil(result)
 	s.Nil(svcErr)
@@ -152,7 +153,7 @@ func (s *ConsentEnforcerServiceTestSuite) TestResolveConsent_SearchConsentsClien
 	s.mockConsentSvc.On("SearchConsents", mock.Anything, mock.Anything).Return(nil, clientErr)
 
 	result, svcErr := s.service.ResolveConsent(context.Background(), "ou1", "app1", "App 1", "user1",
-		[]string{"email"}, nil, nil, nil, false, nil)
+		[]string{"email"}, nil, nil, nil, false, nil, "", nil)
 
 	s.Nil(result)
 	s.NotNil(svcErr)
@@ -170,7 +171,7 @@ func (s *ConsentEnforcerServiceTestSuite) TestResolveConsent_SearchConsentsServe
 	s.mockConsentSvc.On("SearchConsents", mock.Anything, mock.Anything).Return(nil, serverErr)
 
 	result, svcErr := s.service.ResolveConsent(context.Background(), "ou1", "app1", "App 1", "user1",
-		[]string{"email"}, nil, nil, nil, false, nil)
+		[]string{"email"}, nil, nil, nil, false, nil, "", nil)
 
 	s.Nil(result)
 	s.NotNil(svcErr)
@@ -199,7 +200,7 @@ func (s *ConsentEnforcerServiceTestSuite) TestResolveConsent_AllConsentsActive()
 	s.mockConsentSvc.On("SearchConsents", mock.Anything, mock.Anything).Return(existingConsents, nil)
 
 	result, svcErr := s.service.ResolveConsent(context.Background(), "ou1", "app1", "App 1", "user1",
-		[]string{"email"}, nil, nil, nil, false, nil)
+		[]string{"email"}, nil, nil, nil, false, nil, "", nil)
 
 	s.Nil(result)
 	s.Nil(svcErr)
@@ -214,7 +215,7 @@ func (s *ConsentEnforcerServiceTestSuite) TestResolveConsent_ForceRepromptIgnore
 	// forceReprompt is honored: existing active consent is ignored, the element is prompted again,
 	// and SearchConsents is never called.
 	result, svcErr := s.service.ResolveConsent(context.Background(), "ou1", "app1", "App 1", "user1",
-		[]string{"email"}, nil, nil, nil, true, nil)
+		[]string{"email"}, nil, nil, nil, true, nil, "", nil)
 
 	s.Nil(svcErr)
 	s.NotNil(result)
@@ -233,7 +234,7 @@ func (s *ConsentEnforcerServiceTestSuite) TestResolveConsent_PromptNeeded() {
 		mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return("test-session-token", int64(0), nil)
 
 	result, svcErr := s.service.ResolveConsent(context.Background(), "ou1", "app1", "App 1", "user1",
-		[]string{"email"}, []string{"phone"}, nil, nil, false, nil)
+		[]string{"email"}, []string{"phone"}, nil, nil, false, nil, "", nil)
 
 	s.Nil(svcErr)
 	s.NotNil(result)
@@ -253,7 +254,7 @@ func (s *ConsentEnforcerServiceTestSuite) TestResolveConsent_RequiredAttributesF
 
 	// Only request "email" — "phone" and "address" should be filtered out
 	result, svcErr := s.service.ResolveConsent(context.Background(), "ou1", "app1", "App 1", "user1",
-		[]string{"email"}, nil, nil, nil, false, nil)
+		[]string{"email"}, nil, nil, nil, false, nil, "", nil)
 
 	s.Nil(svcErr)
 	s.NotNil(result)
@@ -278,7 +279,7 @@ func (s *ConsentEnforcerServiceTestSuite) TestResolveConsent_UserProfileFilter()
 	// Both "email" and "phone" are requested as optional; the user-profile filter must
 	// drop "phone" because it is not present in availableAttributes.
 	result, svcErr := s.service.ResolveConsent(context.Background(), "ou1", "app1", "App 1", "user1",
-		nil, []string{"email", "phone"}, nil, availableAttributes, false, nil)
+		nil, []string{"email", "phone"}, nil, availableAttributes, false, nil, "", nil)
 
 	s.Nil(svcErr)
 	s.NotNil(result)
@@ -310,7 +311,7 @@ func (s *ConsentEnforcerServiceTestSuite) TestResolveConsent_PartialConsentsExis
 		mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return("test-session-token", int64(0), nil)
 
 	result, svcErr := s.service.ResolveConsent(context.Background(), "ou1", "app1", "App 1", "user1",
-		[]string{"email"}, []string{"phone"}, nil, nil, false, nil)
+		[]string{"email"}, []string{"phone"}, nil, nil, false, nil, "", nil)
 
 	s.Nil(svcErr)
 	s.NotNil(result)
@@ -329,7 +330,7 @@ func (s *ConsentEnforcerServiceTestSuite) TestResolveConsent_PermissionsPurposeP
 		mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return("test-session-token", int64(0), nil)
 
 	result, svcErr := s.service.ResolveConsent(context.Background(), "ou1", "app1", "App 1", "user1",
-		nil, nil, []string{"booking:read"}, nil, false, nil)
+		nil, nil, []string{"booking:read"}, nil, false, nil, "", nil)
 
 	s.Nil(svcErr)
 	s.NotNil(result)
@@ -352,7 +353,7 @@ func (s *ConsentEnforcerServiceTestSuite) TestResolveConsent_CreateConsentSessio
 		})
 
 	result, svcErr := s.service.ResolveConsent(context.Background(), "ou1", "app1", "App 1", "user1",
-		[]string{"email"}, nil, nil, nil, false, nil)
+		[]string{"email"}, nil, nil, nil, false, nil, "", nil)
 
 	s.Nil(result)
 	s.NotNil(svcErr)
@@ -1160,7 +1161,7 @@ func (s *ConsentEnforcerServiceTestSuite) TestBuildPurposePrompts_AllNeedConsent
 		},
 	}
 
-	result := buildPurposePrompts(purposes, nil, []string{"email", "phone"}, map[string]bool{}, nil, nil)
+	result := buildPurposePrompts(purposes, nil, []string{"email", "phone"}, map[string]bool{}, nil, nil, nil, "", nil)
 
 	s.Len(result, 1)
 	s.Equal("attributes:app1", result[0].PurposeName)
@@ -1182,7 +1183,7 @@ func (s *ConsentEnforcerServiceTestSuite) TestBuildPurposePrompts_AllAlreadyCons
 	consentedElements := map[string]bool{"attributes:app1:email": true}
 
 	// "email" is requested but already consented; the prompt builder must drop it.
-	result := buildPurposePrompts(purposes, []string{"email"}, nil, consentedElements, nil, nil)
+	result := buildPurposePrompts(purposes, []string{"email"}, nil, consentedElements, nil, nil, nil, "", nil)
 
 	s.Empty(result)
 }
@@ -1198,7 +1199,7 @@ func (s *ConsentEnforcerServiceTestSuite) TestBuildPurposePrompts_RequiredAttrib
 		},
 	}
 
-	result := buildPurposePrompts(purposes, []string{"email"}, nil, map[string]bool{}, nil, nil)
+	result := buildPurposePrompts(purposes, []string{"email"}, nil, map[string]bool{}, nil, nil, nil, "", nil)
 
 	s.Len(result, 1)
 	s.Equal([]providers.PromptElement{{Name: "email"}}, result[0].Essential)
@@ -1219,8 +1220,7 @@ func (s *ConsentEnforcerServiceTestSuite) TestBuildPurposePrompts_UserProfileFil
 
 	// Both elements are requested; the user-profile filter must drop "phone" since it is
 	// not in availableAttributes.
-	result := buildPurposePrompts(purposes, nil, []string{"email", "phone"}, map[string]bool{},
-		userAttributeSet, nil)
+	result := buildPurposePrompts(purposes, nil, []string{"email", "phone"}, map[string]bool{}, nil, userAttributeSet, nil, "", nil)
 
 	s.Len(result, 1)
 	s.Empty(result[0].Essential)
@@ -1238,7 +1238,7 @@ func (s *ConsentEnforcerServiceTestSuite) TestBuildPurposePrompts_NoMatchingElem
 	}
 
 	// email is filtered out by required attributes
-	result := buildPurposePrompts(purposes, []string{"phone"}, nil, map[string]bool{}, nil, nil)
+	result := buildPurposePrompts(purposes, []string{"phone"}, nil, map[string]bool{}, nil, nil, nil, "", nil)
 
 	s.Empty(result)
 }
@@ -1253,7 +1253,7 @@ func (s *ConsentEnforcerServiceTestSuite) TestBuildPurposePrompts_UnknownPrefixS
 		},
 	}
 
-	result := buildPurposePrompts(purposes, []string{"email"}, nil, map[string]bool{}, nil, nil)
+	result := buildPurposePrompts(purposes, []string{"email"}, nil, map[string]bool{}, nil, nil, nil, "", nil)
 
 	s.Empty(result)
 }
@@ -1778,7 +1778,7 @@ func (s *ConsentEnforcerServiceTestSuite) TestBuildPermissionPurposePrompt_Filte
 	authorized := []string{"p1", "p2", "p4"}
 	consented := map[string]bool{purposeElementKey(purpose.Name, "p2"): true}
 
-	prompt, ok := buildPermissionPurposePrompt(purpose, consented, authorized)
+	prompt, ok := buildPermissionPurposePrompt(purpose, consented, nil, authorized, "", nil)
 	s.True(ok)
 	s.Equal("permissions", prompt.Type)
 	s.Empty(prompt.Essential)
@@ -1799,7 +1799,7 @@ func (s *ConsentEnforcerServiceTestSuite) TestBuildPermissionPurposePrompt_Attac
 			{Name: "users.read"},
 		},
 	}
-	prompt, ok := buildPermissionPurposePrompt(purpose, map[string]bool{}, []string{"users", "users.read"})
+	prompt, ok := buildPermissionPurposePrompt(purpose, map[string]bool{}, nil, []string{"users", "users.read"}, "", nil)
 	s.True(ok)
 	parentByName := make(map[string]string, len(prompt.Optional))
 	for _, e := range prompt.Optional {
@@ -1819,7 +1819,7 @@ func (s *ConsentEnforcerServiceTestSuite) TestBuildPermissionPurposePrompt_Empty
 	}
 	// p1 is consented, so nothing to prompt
 	consented := map[string]bool{purposeElementKey(purpose.Name, "p1"): true}
-	_, ok := buildPermissionPurposePrompt(purpose, consented, []string{"p1"})
+	_, ok := buildPermissionPurposePrompt(purpose, consented, nil, []string{"p1"}, "", nil)
 	s.False(ok)
 }
 
@@ -1848,4 +1848,244 @@ func (s *ConsentEnforcerServiceTestSuite) TestElementNames() {
 	s.Nil(elementNames(nil))
 	s.Nil(elementNames([]providers.PromptElement{}))
 	s.Equal([]string{"a", "b"}, elementNames([]providers.PromptElement{{Name: "a"}, {Name: "b", Parent: "a"}}))
+}
+
+// A subject who approved a resource is not asked again for a permission it carries. Consent is
+// recorded as exact strings, so without this the approval and the permission being issued sit at
+// different levels of the same subtree and never match.
+func TestPermissionAlreadyConsented(t *testing.T) {
+	const purpose = "permissions:app-1"
+	key := func(permission string) string { return purposeElementKey(purpose, permission) }
+
+	tests := []struct {
+		name       string
+		permission string
+		consented  map[string]bool
+		refused    map[string]bool
+		delimiter  string
+		want       bool
+	}{
+		{
+			name:       "ApprovedOutright",
+			permission: "reservations:create",
+			consented:  map[string]bool{key("reservations:create"): true},
+			delimiter:  ":",
+			want:       true,
+		},
+		{
+			name:       "ApprovedThroughTheResourceAbove",
+			permission: "reservations:create",
+			consented:  map[string]bool{key("reservations"): true},
+			delimiter:  ":",
+			want:       true,
+		},
+		{
+			name:       "ApprovedSeveralLevelsAbove",
+			permission: "reservations:online:create",
+			consented:  map[string]bool{key("reservations"): true},
+			delimiter:  ":",
+			want:       true,
+		},
+		{
+			// A refusal is more specific than an approval that merely contains it.
+			name:       "RefusedBeneathAnApprovedResource",
+			permission: "reservations:create",
+			consented:  map[string]bool{key("reservations"): true},
+			refused:    map[string]bool{key("reservations:create"): true},
+			delimiter:  ":",
+			want:       false,
+		},
+		{
+			name:       "RefusedResourceDoesNotApproveWhatIsBeneathIt",
+			permission: "reservations:create",
+			consented:  map[string]bool{},
+			refused:    map[string]bool{key("reservations"): true},
+			delimiter:  ":",
+			want:       false,
+		},
+		{
+			// Approving a leaf says nothing about the resource above it.
+			name:       "ApprovingALeafDoesNotApproveTheResource",
+			permission: "reservations",
+			consented:  map[string]bool{key("reservations:view"): true},
+			delimiter:  ":",
+			want:       false,
+		},
+		{
+			name:       "ExactWithoutADelimiter",
+			permission: "reservations:create",
+			consented:  map[string]bool{key("reservations"): true},
+			delimiter:  "",
+			want:       false,
+		},
+		{
+			name:       "UnrelatedApproval",
+			permission: "invoices:read",
+			consented:  map[string]bool{key("reservations"): true},
+			delimiter:  ":",
+			want:       false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, permissionAlreadyConsented(
+				purpose, tt.permission, tt.consented, tt.refused, tt.delimiter))
+		})
+	}
+}
+
+// Precedence runs from the permission outwards: the nearest decision about it wins, so a refusal
+// high in the tree does not undo an approval closer to the permission being asked about.
+func TestPermissionAlreadyConsented_NearestDecisionWins(t *testing.T) {
+	const purpose = "permissions:app-1"
+	key := func(permission string) string { return purposeElementKey(purpose, permission) }
+
+	// Refused at the top, approved just above the permission: approved.
+	assert.True(t, permissionAlreadyConsented(purpose, "reservations:online:create",
+		map[string]bool{key("reservations:online"): true},
+		map[string]bool{key("reservations"): true},
+		":"))
+
+	// Approved at the top, refused just above the permission: refused.
+	assert.False(t, permissionAlreadyConsented(purpose, "reservations:online:create",
+		map[string]bool{key("reservations"): true},
+		map[string]bool{key("reservations:online"): true},
+		":"))
+}
+
+// A permission granted in place of a broader one the client asked for is prompted as part of one
+// decision rather than as its own choice, so the user answers once instead of curating a set they
+// never requested.
+func (s *ConsentEnforcerServiceTestSuite) TestPermissionPrompt_SubstitutedPermissionsAreNotIndividualChoices() {
+	purpose := consent.ConsentPurpose{
+		Name: consent.PermissionPurposeName("app1"),
+		Elements: []consent.PurposeElement{
+			{Name: "reservations:create", Namespace: consent.NamespacePermission},
+			{Name: "reservations:view", Namespace: consent.NamespacePermission},
+			{Name: "invoices:read", Namespace: consent.NamespacePermission},
+		},
+	}
+
+	prompt, ok := buildPermissionPurposePrompt(purpose, nil, nil,
+		[]string{"reservations:create", "reservations:view", "invoices:read"}, ":",
+		map[string]bool{"reservations:create": true, "reservations:view": true})
+
+	s.Require().True(ok)
+	// Still optional, so refusing them drops those permissions rather than refusing the whole
+	// authorization, but named as a group so they are answered together.
+	s.Equal([]string{"reservations:create", "reservations:view", "invoices:read"},
+		elementNames(prompt.Optional))
+	s.Empty(prompt.Essential)
+	s.Equal([]string{"reservations:create", "reservations:view"}, prompt.Substituted)
+}
+
+// Refusing any member of a substituted group refuses the group, since the user was asked about it
+// as one decision and an arbitrary part of it is not something they chose.
+func (s *ConsentEnforcerServiceTestSuite) TestRecordConsent_RefusingPartOfASubstitutedGroupRefusesAllOfIt() {
+	session := &consentSessionData{Purposes: []consentSessionPurpose{{
+		PurposeName: "app:app1:permissions",
+		Optional:    []string{"reservations:create", "reservations:view", "invoices:read"},
+		Substituted: []string{"reservations:create", "reservations:view"},
+	}}}
+	decisions := &providers.ConsentDecisions{Approved: true, Purposes: []providers.PurposeDecision{{
+		PurposeName: "app:app1:permissions",
+		Approved:    true,
+		Elements: []providers.ElementDecision{
+			{Name: "reservations:create", Approved: true},
+			{Name: "reservations:view", Approved: false},
+			{Name: "invoices:read", Approved: true},
+		},
+	}}}
+
+	applySubstitutedGroupDecisions(session, decisions)
+
+	elements := decisions.Purposes[0].Elements
+	s.False(elements[0].Approved)
+	s.False(elements[1].Approved)
+	// A permission the client asked for by name keeps the user's own answer.
+	s.True(elements[2].Approved)
+}
+
+// Approving every member of the group leaves it approved.
+func (s *ConsentEnforcerServiceTestSuite) TestRecordConsent_ApprovingAWholeSubstitutedGroupKeepsIt() {
+	session := &consentSessionData{Purposes: []consentSessionPurpose{{
+		PurposeName: "app:app1:permissions",
+		Substituted: []string{"reservations:create", "reservations:view"},
+	}}}
+	decisions := &providers.ConsentDecisions{Approved: true, Purposes: []providers.PurposeDecision{{
+		PurposeName: "app:app1:permissions",
+		Approved:    true,
+		Elements: []providers.ElementDecision{
+			{Name: "reservations:create", Approved: true},
+			{Name: "reservations:view", Approved: true},
+		},
+	}}}
+
+	applySubstitutedGroupDecisions(session, decisions)
+
+	s.True(decisions.Purposes[0].Elements[0].Approved)
+	s.True(decisions.Purposes[0].Elements[1].Approved)
+}
+
+// Without substitution every permission stays an individual choice, as before.
+func (s *ConsentEnforcerServiceTestSuite) TestPermissionPrompt_UnsubstitutedPermissionsStayOptional() {
+	purpose := consent.ConsentPurpose{
+		Name: consent.PermissionPurposeName("app1"),
+		Elements: []consent.PurposeElement{
+			{Name: "invoices:read", Namespace: consent.NamespacePermission},
+		},
+	}
+
+	prompt, ok := buildPermissionPurposePrompt(purpose, nil, nil, []string{"invoices:read"}, ":", nil)
+
+	s.Require().True(ok)
+	s.Empty(prompt.Essential)
+	s.Empty(prompt.Substituted)
+	s.Equal([]string{"invoices:read"}, elementNames(prompt.Optional))
+}
+
+// With nothing substituted, which is every resource server whose permissions do not nest, the
+// prompt is exactly what it was: every permission its own choice, nothing essential, no group.
+func (s *ConsentEnforcerServiceTestSuite) TestPermissionPrompt_NonHierarchicalPromptIsUnchanged() {
+	purpose := consent.ConsentPurpose{
+		Name: consent.PermissionPurposeName("app1"),
+		Elements: []consent.PurposeElement{
+			{Name: "invoices:read", Namespace: consent.NamespacePermission},
+			{Name: "invoices:write", Namespace: consent.NamespacePermission},
+		},
+	}
+
+	prompt, ok := buildPermissionPurposePrompt(
+		purpose, nil, nil, []string{"invoices:read", "invoices:write"}, "", nil)
+
+	s.Require().True(ok)
+	s.Empty(prompt.Essential)
+	s.Empty(prompt.Substituted)
+	s.Equal([]string{"invoices:read", "invoices:write"}, elementNames(prompt.Optional))
+	for _, element := range prompt.Optional {
+		s.Empty(element.Parent, "no delimiter means no rollup parent")
+	}
+}
+
+// Resolving substituted groups is inert when no group was recorded, so a decision on a resource
+// server whose permissions do not nest is passed through exactly as the user made it.
+func (s *ConsentEnforcerServiceTestSuite) TestRecordConsent_NonHierarchicalDecisionsAreUntouched() {
+	session := &consentSessionData{Purposes: []consentSessionPurpose{{
+		PurposeName: "app:app1:permissions",
+		Optional:    []string{"invoices:read", "invoices:write"},
+	}}}
+	decisions := &providers.ConsentDecisions{Approved: true, Purposes: []providers.PurposeDecision{{
+		PurposeName: "app:app1:permissions",
+		Approved:    true,
+		Elements: []providers.ElementDecision{
+			{Name: "invoices:read", Approved: true},
+			{Name: "invoices:write", Approved: false},
+		},
+	}}}
+
+	applySubstitutedGroupDecisions(session, decisions)
+
+	s.True(decisions.Purposes[0].Elements[0].Approved)
+	s.False(decisions.Purposes[0].Elements[1].Approved)
 }

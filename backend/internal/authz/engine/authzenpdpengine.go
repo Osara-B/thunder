@@ -214,7 +214,13 @@ func (p *authZENPDPEngine) evaluateBatch(
 
 	results := make([]AccessEvaluationResponse, 0, len(response.Evaluations))
 	for _, evaluation := range response.Evaluations {
-		results = append(results, AccessEvaluationResponse(evaluation))
+		// Mapped field by field rather than converted: the policy decision point decides, and it
+		// has no view of this deployment's permission tree, so it never reports permissions held
+		// beneath a refused one.
+		results = append(results, AccessEvaluationResponse{
+			Decision: evaluation.Decision,
+			Context:  evaluation.Context,
+		})
 	}
 	return &AccessEvaluationsResponse{Evaluations: results}, nil
 }

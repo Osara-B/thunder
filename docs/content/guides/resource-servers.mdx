@@ -75,10 +75,46 @@ curl -kL -X POST https://localhost:8090/resource-servers \
 | `type` | No | `API`, `MCP`, or `CUSTOM`. Defaults to `CUSTOM`. Immutable after creation. |
 | `ouId` | Yes | Organization unit ID. |
 | `delimiter` | No | Character that separates hierarchy levels in permission strings. Defaults to `:`. Immutable after creation. Allowed characters: `a-z A-Z 0-9 . _ : - /`. |
+| `hierarchicalPermissions` | No | Whether granting a permission on this resource server also grants the permissions beneath it. Defaults to `false`. Can be changed later. |
 | `description` | No | Description of the resource server. |
 
 :::note
 The `delimiter` field cannot be changed after creation. Plan this value before creating the resource server.
+:::
+
+### Granting a Permission and What Is Beneath It
+
+By default, each permission is granted on its own. A role that grants `reservations` grants only
+`reservations`, and a client asking for `reservations:create` is refused unless the role grants that
+string as well.
+
+Set `hierarchicalPermissions` to `true` and granting `reservations` also grants everything beneath
+it, including permissions added beneath it later. A client asking for `reservations:create` is then
+granted it, and a client asking for `reservations` on a role that grants only some of the
+permissions beneath it is granted those. Granting every permission beneath a resource is not the
+same as granting the resource itself, so the resource is never issued on the strength of its
+children alone.
+
+When permissions are granted this way, the consent screen asks about them as a single decision
+rather than one checkbox each. The user asked to approve access to the resource, not to assemble a
+set of permissions they never requested, so they see what is being granted and answer once.
+
+This applies to resource servers using the built-in role-based engine. One configured with an
+external AuthZEN policy decision point gets its decisions from that service, which has no view of
+this permission tree, so a request for a resource is answered yes or no on its own.
+
+Turn this on only for a resource server whose API reads scopes that way. ThunderID issues the
+permission strings the client asked for, so an API that compares a scope claim exactly still sees
+exact strings; what changes is which of them it can obtain.
+
+Because the setting is read when a request is authorized rather than copied into each grant, turning
+it off narrows every existing grant on that resource server at once, and turning it on widens them.
+Access tokens already issued are not affected and keep working until they expire; the next refresh
+re-evaluates against the new setting.
+
+:::warning
+When updating a resource server, send `hierarchicalPermissions` with its current value. An update
+that omits it is read as `false` and turns the setting off.
 :::
 
 ## Define Permissions

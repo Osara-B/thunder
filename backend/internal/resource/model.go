@@ -9,15 +9,16 @@ import "github.com/thunder-id/thunderid/pkg/thunderidengine/providers"
 
 // ResourceServerResponse represents a resource server.
 type ResourceServerResponse struct {
-	ID                  string                              `json:"id"`
-	Name                string                              `json:"name"`
-	Description         string                              `json:"description,omitempty"`
-	Identifier          string                              `json:"identifier"`
-	Type                providers.ResourceServerType        `json:"type"`
-	OUID                string                              `json:"ouId"`
-	Delimiter           string                              `json:"delimiter"`
-	AuthorizationEngine providers.AuthorizationEngineConfig `json:"authorizationEngine,omitempty"`
-	IsReadOnly          bool                                `json:"isReadOnly"`
+	ID                      string                              `json:"id"`
+	Name                    string                              `json:"name"`
+	Description             string                              `json:"description,omitempty"`
+	Identifier              string                              `json:"identifier"`
+	Type                    providers.ResourceServerType        `json:"type"`
+	OUID                    string                              `json:"ouId"`
+	Delimiter               string                              `json:"delimiter"`
+	HierarchicalPermissions bool                                `json:"hierarchicalPermissions"`
+	AuthorizationEngine     providers.AuthorizationEngineConfig `json:"authorizationEngine,omitempty"`
+	IsReadOnly              bool                                `json:"isReadOnly"`
 }
 
 // ResourceResponse represents a resource.
@@ -81,15 +82,22 @@ type CreateResourceServerRequest struct {
 	Type        providers.ResourceServerType `json:"type,omitempty"`
 	OUID        string                       `json:"ouId"                  native:"required"`
 	Delimiter   string                       `json:"delimiter,omitempty"`
+	// HierarchicalPermissions declares that this server's permissions nest, so granting one
+	// authorizes those beneath it. Immutable after creation, like the delimiter it depends on.
+	HierarchicalPermissions bool `json:"hierarchicalPermissions,omitempty"`
 }
 
 // UpdateResourceServerRequest represents the request to update a resource server.
 type UpdateResourceServerRequest struct {
-	Name                string                              `json:"name"`
-	Description         string                              `json:"description,omitempty"`
-	Identifier          string                              `json:"identifier,omitempty"`
-	OUID                string                              `json:"ouId"                  native:"required"`
-	AuthorizationEngine providers.AuthorizationEngineConfig `json:"authorizationEngine,omitempty"`
+	// HierarchicalPermissions declares whether this server's permissions nest, so that granting a
+	// resource grants what sits beneath it. It may be turned on and off after creation; it decides
+	// how grants are read at evaluation time rather than being fixed into them when they are made.
+	HierarchicalPermissions bool                                `json:"hierarchicalPermissions"`
+	Name                    string                              `json:"name"`
+	Description             string                              `json:"description,omitempty"`
+	Identifier              string                              `json:"identifier,omitempty"`
+	OUID                    string                              `json:"ouId"                  native:"required"`
+	AuthorizationEngine     providers.AuthorizationEngineConfig `json:"authorizationEngine,omitempty"`
 }
 
 // CreateResourceRequest represents the request to create a resource.

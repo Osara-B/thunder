@@ -112,7 +112,15 @@ function DetailForm({selectedNode, resourceServer, onRefresh}: DetailFormProps):
       updateRs.mutate(
         {
           id: resourceServer.id,
-          data: {name, description: description || null, identifier: nextIdentifier, ouId: resourceServer.ouId},
+          data: {
+            name,
+            description: description || null,
+            identifier: nextIdentifier,
+            ouId: resourceServer.ouId,
+            // Resent unchanged: the server reads an absent value as off, so leaving it out here
+            // would turn hierarchical matching off as a side effect of a rename.
+            hierarchicalPermissions: resourceServer.hierarchicalPermissions ?? false,
+          },
         },
         {
           onSuccess: () => {

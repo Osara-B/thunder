@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
 
@@ -206,4 +207,66 @@ func (s *GrantHandlerUtilsTestSuite) TestGrantRevocationError() {
 
 	unavailable := grantRevocationError(errors.New("db down"))
 	s.Equal(constants.ErrorServerError, unavailable.Error)
+}
+
+func TestGrantPermits(t *testing.T) {
+	oidc := map[string]struct{}{"openid": {}, "profile": {}}
+
+	tests := []struct {
+		name      string
+		requested string
+		granted   []string
+		delimiter string
+		want      bool
+	}{
+		{
+			name:      "a grant of the resource carries what sits beneath it",
+			requested: "reservations:view", granted: []string{"reservations"}, delimiter: ":", want: true,
+		},
+		{
+			name:      "and carries it at any depth",
+			requested: "reservations:online:view", granted: []string{"reservations"}, delimiter: ":", want: true,
+		},
+		{
+			name:      "an exactly granted scope is permitted",
+			requested: "reservations:view", granted: []string{"reservations:view"}, delimiter: ":", want: true,
+		},
+		{
+			// Narrowing never works upwards: the resource carries every other descendant too.
+			name:      "a grant of a descendant does not carry the resource it sits under",
+			requested: "reservations", granted: []string{"reservations:view"}, delimiter: ":", want: false,
+		},
+		{
+			name:      "a sibling is not carried",
+			requested: "reservations:create", granted: []string{"reservations:view"}, delimiter: ":", want: false,
+		},
+		{
+			name:      "a shared prefix that is not an ancestor is not carried",
+			requested: "reservationsarchive", granted: []string{"reservations"}, delimiter: ":", want: false,
+		},
+		{
+			// An OIDC scope is not a permission on any resource server, so it stands for itself only.
+			name:      "an OIDC scope in the grant never acts as an ancestor",
+			requested: "profile:secret", granted: []string{"profile"}, delimiter: ":", want: false,
+		},
+		{
+			name:      "an OIDC scope is still permitted exactly",
+			requested: "openid", granted: []string{"openid", "reservations"}, delimiter: ":", want: true,
+		},
+		{
+			name:      "a non-colon delimiter is honoured",
+			requested: "reservations/view", granted: []string{"reservations"}, delimiter: "/", want: true,
+		},
+		{
+			// An unbound grant has no resource server and therefore no delimiter.
+			name:      "no delimiter reduces the test to equality",
+			requested: "reservations:view", granted: []string{"reservations"}, delimiter: "", want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, grantPermits(tt.requested, tt.granted, oidc, tt.delimiter))
+		})
+	}
 }

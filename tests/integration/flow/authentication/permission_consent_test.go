@@ -39,6 +39,10 @@ type PermissionConsentFlowTestSuite struct {
 	rsID       string
 	roleID     string
 
+	// A subject granted the parent resource alone, and the role conferring it.
+	subtreeUserID string
+	subtreeRoleID string
+
 	// Resource IDs in creation order; teardown removes them leaf first so the resource server can
 	// then be deleted.
 	resourceIDs []string
@@ -58,6 +62,7 @@ const (
 	permConsentPromptUsername  = "permission_consent_prompt_user"
 	permConsentApproveUsername = "permission_consent_approve_user"
 	permConsentDenyUsername    = "permission_consent_deny_user"
+	permConsentSubtreeUsername = "permission_consent_subtree_user"
 	permConsentPassword        = "SecurePass123!"
 
 	permConsentRSIdentifier = "permission-consent-docs"
@@ -73,9 +78,13 @@ const (
 	// would pass.
 	permConsentDecoyPermission = "docsx"
 
-	// A permission the user is never granted. It is requested anyway, so the prompt is shown to
-	// carry only what was authorized.
-	permConsentUnheldPermission = "docs:payroll"
+	// A second permission beneath the parent resource, granted only through it rather than in its
+	// own right.
+	permConsentSecondChildPermission = "docs:payroll"
+
+	// A permission no role confers. It sits outside every granted resource, since a permission
+	// beneath one would be conferred by the grant of that resource.
+	permConsentUnheldPermission = "restricted"
 
 	permConsentPurposeType = "permissions"
 )
@@ -114,6 +123,9 @@ func (ts *PermissionConsentFlowTestSuite) SetupSuite() {
 		Description: "Resource server for permission consent flow testing",
 		Identifier:  permConsentRSIdentifier,
 		OUID:        ouID,
+		// Declared, so a grant of "docs" carries what sits beneath it. Without this the cases below
+		// would be asserting against a resource server whose permissions do not nest at all.
+		HierarchicalPermissions: true,
 	}, nil)
 	ts.Require().NoError(err, "Failed to create test resource server")
 
@@ -121,6 +133,7 @@ func (ts *PermissionConsentFlowTestSuite) SetupSuite() {
 	ts.createResource("Reports", "reports", docsID)
 	ts.createResource("Payroll", "payroll", docsID)
 	ts.createResource("Docs Extended", permConsentDecoyPermission, "")
+	ts.createResource("Restricted", permConsentUnheldPermission, "")
 
 	flowID, err := testutils.CreateFlow(testutils.Flow{
 		Name:     "Permission Consent Test Auth Flow",
@@ -171,6 +184,25 @@ func (ts *PermissionConsentFlowTestSuite) SetupSuite() {
 		},
 	})
 	ts.Require().NoError(err, "Failed to create test role")
+
+	// A subject granted the parent resource and nothing beneath it. The resource carries a permission
+	// of its own, and granting it grants what it contains, including the child the role above omits.
+	ts.subtreeUserID = ts.createPermConsentUser(permConsentSubtreeUsername, "permission.subtree@test.com")
+	ts.subtreeRoleID, err = testutils.CreateRole(testutils.Role{
+		Name:        "permission-consent-subtree",
+		Description: "Role granting only the parent resource",
+		OUID:        ouID,
+		Permissions: []testutils.ResourcePermissions{
+			{
+				ResourceServerID: ts.rsID,
+				Permissions:      []string{permConsentParentPermission},
+			},
+		},
+		Assignments: []testutils.Assignment{
+			{ID: ts.subtreeUserID, Type: "user"},
+		},
+	})
+	ts.Require().NoError(err, "Failed to create the subtree role")
 }
 
 // createResource creates a resource under the suite's resource server, recording it for teardown.
@@ -204,12 +236,17 @@ func (ts *PermissionConsentFlowTestSuite) createPermConsentUser(username, email 
 }
 
 func (ts *PermissionConsentFlowTestSuite) TearDownSuite() {
+	if ts.subtreeRoleID != "" {
+		if err := testutils.DeleteRole(ts.subtreeRoleID); err != nil {
+			ts.T().Logf("Failed to delete the subtree role: %v", err)
+		}
+	}
 	if ts.roleID != "" {
 		if err := testutils.DeleteRole(ts.roleID); err != nil {
 			ts.T().Logf("Failed to delete test role: %v", err)
 		}
 	}
-	for _, id := range []string{ts.promptUserID, ts.approveUserID, ts.denyUserID} {
+	for _, id := range []string{ts.promptUserID, ts.approveUserID, ts.denyUserID, ts.subtreeUserID} {
 		if id != "" {
 			if err := testutils.DeleteUser(id); err != nil {
 				ts.T().Logf("Failed to delete test user %s: %v", id, err)
@@ -377,7 +414,8 @@ func (ts *PermissionConsentFlowTestSuite) authenticateToPermissionConsent(userna
 	step, err := common.InitiateAuthenticationFlow(ts.appID, false, map[string]string{
 		"applicationId": ts.appID,
 		"requested_permissions": permConsentParentPermission + " " + permConsentChildPermission +
-			" " + permConsentDecoyPermission + " " + permConsentUnheldPermission,
+			" " + permConsentSecondChildPermission + " " + permConsentDecoyPermission +
+			" " + permConsentUnheldPermission,
 		"resource_server_identifier": permConsentRSIdentifier,
 	}, "")
 	ts.Require().NoError(err, "Failed to initiate authentication flow")
@@ -433,6 +471,8 @@ func (ts *PermissionConsentFlowTestSuite) TestPermissionConsent_ElementsCarryRol
 		"a top-level permission has nothing to roll up to")
 	ts.Empty(parents[permConsentDecoyPermission],
 		"sharing a prefix without a delimiter is not a parent relationship")
+	ts.Equal(permConsentParentPermission, parents[permConsentSecondChildPermission],
+		"a permission conferred through the resource it sits under still rolls up to it")
 
 	// The application requests this permission but the user was never granted it. Offering it for
 	// consent would record a decision about access the user does not hold.
@@ -448,4 +488,27 @@ func (ts *PermissionConsentFlowTestSuite) TestPermissionConsent_PurposeIsNamedFo
 
 	ts.Equal("permissions:"+ts.appID, purpose.PurposeName,
 		"the permission purpose is derived from the application it belongs to")
+}
+
+// A role granting the parent resource authorizes everything beneath it, including the child the
+// explicitly-granted role deliberately omits, and nothing that merely shares its prefix.
+func (ts *PermissionConsentFlowTestSuite) TestPermissionConsent_ParentGrantCarriesTheSubtree() {
+	step := ts.authenticateToPermissionConsent(permConsentSubtreeUsername)
+	purpose := ts.requirePermissionPurpose(step)
+
+	offered := make([]string, 0, len(purpose.Optional))
+	for _, element := range purpose.Optional {
+		offered = append(offered, element.Name)
+	}
+
+	ts.Contains(offered, permConsentParentPermission,
+		"the granted resource is a permission in its own right")
+	ts.Contains(offered, permConsentChildPermission,
+		"a permission nested under the granted resource is authorized through it")
+	ts.Contains(offered, permConsentSecondChildPermission,
+		"granting the parent grants every child, including one granted in its own right to nobody")
+	ts.NotContains(offered, permConsentUnheldPermission,
+		"a permission outside every granted resource is never conferred")
+	ts.NotContains(offered, permConsentDecoyPermission,
+		"sharing a prefix without a delimiter is not a parent relationship, so it is not conferred")
 }

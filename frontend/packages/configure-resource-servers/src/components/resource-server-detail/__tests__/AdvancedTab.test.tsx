@@ -16,8 +16,10 @@ vi.mock('../../../api/useAuthZENPDPConnections', () => ({default: () => mockPDPC
 const engineProps = {
   authorizationEngine: AuthorizationEngines.RBAC,
   pdpConnectionId: '',
+  hierarchicalPermissions: false,
   onAuthorizationEngineChange: vi.fn(),
   onPDPConnectionChange: vi.fn(),
+  onHierarchicalPermissionsChange: vi.fn(),
 };
 
 const mockResourceServer: ResourceServer = {
@@ -257,5 +259,59 @@ describe('AdvancedTab', () => {
 
     expect(screen.getByText('Authorization engine')).toHaveClass('Mui-error');
     expect(screen.getByText('Failed to load AuthZEN PDP connections.')).toHaveClass('Mui-error');
+  });
+});
+
+// Whether permissions nest can be changed after creation, and it is the only thing that tells an
+// administrator whether granting a resource here grants its subtree. The delimiter it reads them
+// with stays fixed, so that one is reported rather than offered.
+describe('AdvancedTab permission matching', () => {
+  const renderFor = (server: ResourceServer, onHierarchicalPermissionsChange = vi.fn()) =>
+    renderWithProviders(
+      <AdvancedTab
+        {...engineProps}
+        resourceServer={server}
+        identifier={server.identifier}
+        hierarchicalPermissions={server.hierarchicalPermissions ?? false}
+        onHierarchicalPermissionsChange={onHierarchicalPermissionsChange}
+        onIdentifierChange={vi.fn()}
+      />,
+    );
+
+  it('reports a hierarchical resource server and its delimiter', () => {
+    renderFor({...mockResourceServer, hierarchicalPermissions: true, delimiter: ':'});
+
+    expect(screen.getByText(/Granting a resource also grants every permission beneath it/i)).toBeInTheDocument();
+    // The delimiter is shown as a value, in a field of its own, and cannot be edited: the
+    // permission strings were built from it.
+    const delimiter = screen.getByLabelText('Permission delimiter');
+    expect(delimiter).toHaveValue(':');
+    expect(delimiter).toBeDisabled();
+  });
+
+  it('reports one whose permissions are matched exactly', () => {
+    renderFor({...mockResourceServer, hierarchicalPermissions: false, delimiter: '-'});
+
+    expect(screen.getByText(/Each permission is granted on its own/i)).toBeInTheDocument();
+  });
+
+  it('turns nesting on', async () => {
+    const onChange = vi.fn();
+    renderFor({...mockResourceServer, hierarchicalPermissions: false, delimiter: ':'}, onChange);
+
+    fireEvent.mouseDown(screen.getByRole('combobox', {name: 'Permission matching'}));
+    fireEvent.click(await screen.findByRole('option', {name: 'Hierarchical'}));
+
+    expect(onChange).toHaveBeenCalledWith(true);
+  });
+
+  it('turns nesting off', async () => {
+    const onChange = vi.fn();
+    renderFor({...mockResourceServer, hierarchicalPermissions: true, delimiter: ':'}, onChange);
+
+    fireEvent.mouseDown(screen.getByRole('combobox', {name: 'Permission matching'}));
+    fireEvent.click(await screen.findByRole('option', {name: 'Exact'}));
+
+    expect(onChange).toHaveBeenCalledWith(false);
   });
 });

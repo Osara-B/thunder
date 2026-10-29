@@ -417,6 +417,7 @@ describe('ResourceServerEditPage', () => {
           description: null,
           identifier: 'https://new-api.example.com',
           ouId: 'ou-1',
+          hierarchicalPermissions: false,
           authorizationEngine: {
             type: 'rbac',
           },

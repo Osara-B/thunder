@@ -26,10 +26,12 @@ import useSubtreePermissions from '../../api/useSubtreePermissions';
 import type {Resource, ResourcePermissions, ResourceServer} from '../../models/resource-server';
 import {
   getSubtreeSelectionState,
+  isPermissionCovered,
   isPermissionSelected,
   mergePermissions,
   removePermissions,
   togglePermission,
+  toggleSubtreePermission,
   type SelectionState,
 } from '../../utils/permissionSelection';
 
@@ -96,6 +98,16 @@ export interface CatalogResourceNodeProps {
   selected: ResourcePermissions[];
   readOnly: boolean;
   delimiter: string;
+  /**
+   * Whether this resource server declared its permissions hierarchical.
+   *
+   * It decides how selecting a resource is recorded, not whether it can be. Declared, the resource's
+   * own permission is recorded and carries what sits beneath it, including anything added later.
+   * Not declared, a resource confers nothing but itself, so the selection is written out as every
+   * permission in the subtree, which is what it has always done and what the role needs to actually
+   * grant them.
+   */
+  hierarchical: boolean;
   onChange: (selected: ResourcePermissions[]) => void;
   collectSubtree: (resource: Resource) => Promise<string[]>;
   getCachedSubtree: (resource: Resource) => string[] | null;
@@ -108,6 +120,7 @@ export function CatalogResourceNode({
   selected,
   readOnly,
   delimiter,
+  hierarchical,
   onChange,
   collectSubtree,
   getCachedSubtree,
@@ -123,9 +136,29 @@ export function CatalogResourceNode({
   const childResources = childResourcesData?.resources ?? [];
   const resourceActions = resourceActionsData?.actions ?? [];
 
+  const selectedHere = isPermissionSelected(selected, resourceServerId, resource.permission);
   const cached = getCachedSubtree(resource);
-  let state: SelectionState;
-  if (cached !== null) {
+
+  // Declared hierarchical, the row is fully selected exactly when the resource's own permission is
+  // held, whether listed here or conferred by an ancestor, and anything selected strictly beneath it
+  // is a partial selection. Neither question needs the subtree loaded.
+  //
+  // Not declared, the row stands for the subtree it writes out, so it is fully selected only when
+  // every permission in that subtree is listed. That needs the subtree, which is why it is loaded.
+  let state: SelectionState = 'none';
+  let coveredByAncestor = false;
+  if (hierarchical) {
+    const covered = isPermissionCovered(selected, resourceServerId, resource.permission, delimiter);
+    const serverEntry = selected.find((e) => e.resourceServerId === resourceServerId);
+    const anyUnder = serverEntry?.permissions.some((p) => p.startsWith(`${resource.permission}${delimiter}`)) ?? false;
+    if (covered) {
+      state = 'all';
+    } else if (anyUnder) {
+      state = 'some';
+    }
+    // Conferred by an ancestor rather than held here, so it cannot be cleared from this row.
+    coveredByAncestor = covered && !selectedHere;
+  } else if (cached !== null) {
     state = getSubtreeSelectionState(selected, resourceServerId, cached);
   } else {
     const serverEntry = selected.find((e) => e.resourceServerId === resourceServerId);
@@ -136,7 +169,11 @@ export function CatalogResourceNode({
     state = anyUnder ? 'some' : 'none';
   }
 
-  const handleCascadeToggle = (): void => {
+  const handleToggle = (): void => {
+    if (hierarchical) {
+      onChange(toggleSubtreePermission(selected, resourceServerId, resource.permission, delimiter));
+      return;
+    }
     if (state === 'all' && cached !== null) {
       onChange(removePermissions(selected, resourceServerId, cached));
       return;
@@ -162,9 +199,9 @@ export function CatalogResourceNode({
         depth={depth}
         checked={state === 'all'}
         indeterminate={state === 'some'}
-        disabled={readOnly}
+        disabled={readOnly || coveredByAncestor}
         loading={cascading}
-        onToggle={handleCascadeToggle}
+        onToggle={handleToggle}
         expandControl={
           <IconButton size="small" onClick={() => setExpanded((v) => !v)} aria-label={resource.handle}>
             {isOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
@@ -183,8 +220,12 @@ export function CatalogResourceNode({
             name={action.name}
             permission={action.permission}
             depth={depth + 1}
-            checked={isPermissionSelected(selected, resourceServerId, action.permission)}
-            disabled={readOnly}
+            checked={
+              hierarchical
+                ? isPermissionCovered(selected, resourceServerId, action.permission, delimiter)
+                : isPermissionSelected(selected, resourceServerId, action.permission)
+            }
+            disabled={readOnly || (hierarchical && state === 'all')}
             onToggle={() => onChange(togglePermission(selected, resourceServerId, action.permission, delimiter))}
           />
         ))}
@@ -197,6 +238,7 @@ export function CatalogResourceNode({
             selected={selected}
             readOnly={readOnly}
             delimiter={delimiter}
+            hierarchical={hierarchical}
             onChange={onChange}
             collectSubtree={collectSubtree}
             getCachedSubtree={getCachedSubtree}
@@ -283,6 +325,7 @@ function DefaultServerSectionContent({
           selected={selected}
           readOnly={readOnly}
           delimiter={delimiter}
+          hierarchical={server.hierarchicalPermissions ?? false}
           onChange={onChange}
           collectSubtree={collectSubtree}
           getCachedSubtree={getCachedSubtree}

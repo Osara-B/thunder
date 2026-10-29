@@ -5957,6 +5957,19 @@ const translations = {
     'permissionCatalog.loadError': 'Failed to load permissions for this resource server.',
     'permissionCatalog.loadServersError': 'Failed to load resource servers.',
     'permissionCatalog.serverNotFound': 'Resource server not found',
+    'create.separator.hierarchical.label': 'Permissions are hierarchical',
+    'create.separator.hierarchical.hint':
+      'Granting a resource also grants the permissions beneath it. Leave this off if your API treats each permission as a separate value.',
+    'create.separator.hierarchical.notice':
+      'A grant covers permissions added beneath it later, so a resource added under one a role already grants is granted too.',
+    'edit.advanced.permissionMatching.title': 'Permissions',
+    'edit.advanced.permissionMatching.description': 'Permission settings for this resource server.',
+    'edit.advanced.permissionMatching.label': 'Permission matching',
+    'edit.advanced.permissionMatching.hierarchical': 'Hierarchical',
+    'edit.advanced.permissionMatching.exact': 'Exact',
+    'edit.advanced.permissionMatching.hierarchicalHint': 'Granting a resource also grants every permission beneath it.',
+    'edit.advanced.permissionMatching.exactHint': 'Each permission is granted on its own.',
+    'edit.advanced.delimiter.label': 'Permission delimiter',
 
     // Backend error code translations (per resource server service error envelope).
     'errors.RES-1001': 'The request body is malformed or contains invalid data.',

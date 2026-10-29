@@ -80,3 +80,6 @@ jwt:
 passkey:
   allowed_origins:
     - "https://localhost:8090"
+
+gate_client:
+  port: 5190

@@ -923,7 +923,7 @@ func (suite *RefreshTokenGrantHandlerTestSuite) TestValidateAndApplyScopes_NoSco
 	refreshTokenScopes := []string{"read", "write", "delete"}
 	logger := log.GetLogger()
 
-	result, errResp := suite.handler.validateAndApplyScopes(context.Background(), "", refreshTokenScopes, logger)
+	result, errResp := suite.handler.validateAndApplyScopes(context.Background(), "", refreshTokenScopes, nil, ":", logger)
 
 	assert.Nil(suite.T(), errResp)
 	assert.Equal(suite.T(), refreshTokenScopes, result)
@@ -938,6 +938,8 @@ func (suite *RefreshTokenGrantHandlerTestSuite) TestValidateAndApplyScopes_Reque
 		context.Background(),
 		"read write",
 		refreshTokenScopes,
+		nil,
+		":",
 		logger)
 
 	assert.Nil(suite.T(), errResp)
@@ -955,6 +957,8 @@ func (suite *RefreshTokenGrantHandlerTestSuite) TestValidateAndApplyScopes_SomeR
 		context.Background(),
 		"read write delete admin",
 		refreshTokenScopes,
+		nil,
+		":",
 		logger)
 
 	assert.NotNil(suite.T(), errResp)
@@ -970,6 +974,8 @@ func (suite *RefreshTokenGrantHandlerTestSuite) TestValidateAndApplyScopes_NoMat
 		context.Background(),
 		"admin delete",
 		refreshTokenScopes,
+		nil,
+		":",
 		logger)
 
 	assert.NotNil(suite.T(), errResp)
@@ -2975,4 +2981,127 @@ func (suite *RefreshTokenGrantHandlerTestSuite) TestHandleGrant_AdmittedSubjectR
 
 	assert.Nil(suite.T(), err)
 	assert.NotNil(suite.T(), response)
+}
+
+// A grant of a resource lets a refresh narrow to something beneath it, so a client asking for less
+// than it holds is answered rather than refused.
+func (suite *RefreshTokenGrantHandlerTestSuite) TestHandleGrant_NarrowsToAScopeBeneathTheGrant() {
+	suite.resetAuthzMocks()
+	suite.mockTokenValidator.
+		On("ValidateRefreshToken", mock.Anything, suite.validRefreshToken).
+		Return(&tokenservice.RefreshTokenClaims{
+			ClientID:  testRefreshTokenClientID,
+			Sub:       testRefreshTokenUserID,
+			Audiences: []string{testRefreshTokenAudience},
+			Scopes:    []string{"reservations"},
+			GrantType: "authorization_code",
+			Iat:       int64(suite.validClaims["iat"].(float64)),
+		}, nil)
+
+	rsvc := resourcemock.NewResourceServiceInterfaceMock(suite.T())
+	rsvc.On("GetResourceServerByIdentifier", mock.Anything, testRefreshTokenAudience).
+		Return(&providers.ResourceServer{
+			ID: testRefreshTokenAudience, Identifier: testRefreshTokenAudience, Delimiter: ":",
+			HierarchicalPermissions: true,
+		}, nil)
+	rsvc.On("ValidatePermissions", mock.Anything, mock.Anything, mock.Anything).Return([]string{}, nil)
+	suite.mockResourceService = rsvc
+	suite.rebuildHandlerWithConfig()
+
+	suite.mockActorProvider.On("GetActorGroups", testRefreshTokenUserID).
+		Return([]providers.EntityGroup{}, nil)
+	mockEvaluateAccessBatch(suite.mockAuthzService, testRefreshTokenUserID, testRefreshTokenAudience,
+		[]string{"reservations:view"}, []string{"reservations:view"})
+
+	var grantedScopes []string
+	suite.mockTokenBuilder.On("BuildAccessToken", mock.Anything, mock.MatchedBy(
+		func(ctx *tokenservice.AccessTokenBuildContext) bool {
+			grantedScopes = ctx.Scopes
+			return true
+		})).Return(&model.TokenDTO{
+		Token: "new.access.token", IssuedAt: time.Now().Unix(), ExpiresIn: 3600,
+	}, nil)
+
+	response, err := suite.handler.HandleGrant(context.Background(), &model.TokenRequest{
+		GrantType:    string(providers.GrantTypeRefreshToken),
+		ClientID:     testRefreshTokenClientID,
+		RefreshToken: suite.validRefreshToken,
+		Scope:        "reservations:view",
+	}, suite.oauthApp)
+
+	assert.Nil(suite.T(), err)
+	suite.Require().NotNil(response)
+	assert.Equal(suite.T(), []string{"reservations:view"}, grantedScopes)
+}
+
+// Narrowing never works upwards: a grant of a descendant does not admit a request for the resource
+// it sits under, which would carry every other descendant with it.
+func (suite *RefreshTokenGrantHandlerTestSuite) TestHandleGrant_RefusesNarrowingUpwards() {
+	suite.resetAuthzMocks()
+	suite.mockTokenValidator.
+		On("ValidateRefreshToken", mock.Anything, suite.validRefreshToken).
+		Return(&tokenservice.RefreshTokenClaims{
+			ClientID:  testRefreshTokenClientID,
+			Sub:       testRefreshTokenUserID,
+			Audiences: []string{testRefreshTokenAudience},
+			Scopes:    []string{"reservations:view"},
+			GrantType: "authorization_code",
+			Iat:       int64(suite.validClaims["iat"].(float64)),
+		}, nil)
+
+	rsvc := resourcemock.NewResourceServiceInterfaceMock(suite.T())
+	rsvc.On("GetResourceServerByIdentifier", mock.Anything, testRefreshTokenAudience).
+		Return(&providers.ResourceServer{
+			ID: testRefreshTokenAudience, Identifier: testRefreshTokenAudience, Delimiter: ":",
+			HierarchicalPermissions: true,
+		}, nil)
+	suite.mockResourceService = rsvc
+	suite.rebuildHandlerWithConfig()
+
+	response, err := suite.handler.HandleGrant(context.Background(), &model.TokenRequest{
+		GrantType:    string(providers.GrantTypeRefreshToken),
+		ClientID:     testRefreshTokenClientID,
+		RefreshToken: suite.validRefreshToken,
+		Scope:        "reservations",
+	}, suite.oauthApp)
+
+	assert.Nil(suite.T(), response)
+	suite.Require().NotNil(err)
+	assert.Equal(suite.T(), constants.ErrorInvalidScope, err.Error)
+}
+
+// What a permission string means belongs to the resource server, so a refresh against one whose
+// owner did not declare its permissions hierarchical keeps matching the grant exactly.
+func (suite *RefreshTokenGrantHandlerTestSuite) TestHandleGrant_NoNarrowingWithoutHierarchicalPermissions() {
+	suite.resetAuthzMocks()
+	suite.mockTokenValidator.
+		On("ValidateRefreshToken", mock.Anything, suite.validRefreshToken).
+		Return(&tokenservice.RefreshTokenClaims{
+			ClientID:  testRefreshTokenClientID,
+			Sub:       testRefreshTokenUserID,
+			Audiences: []string{testRefreshTokenAudience},
+			Scopes:    []string{"reservations"},
+			GrantType: "authorization_code",
+			Iat:       int64(suite.validClaims["iat"].(float64)),
+		}, nil)
+
+	rsvc := resourcemock.NewResourceServiceInterfaceMock(suite.T())
+	rsvc.On("GetResourceServerByIdentifier", mock.Anything, testRefreshTokenAudience).
+		Return(&providers.ResourceServer{
+			ID: testRefreshTokenAudience, Identifier: testRefreshTokenAudience, Delimiter: ":",
+			HierarchicalPermissions: false,
+		}, nil)
+	suite.mockResourceService = rsvc
+	suite.rebuildHandlerWithConfig()
+
+	response, err := suite.handler.HandleGrant(context.Background(), &model.TokenRequest{
+		GrantType:    string(providers.GrantTypeRefreshToken),
+		ClientID:     testRefreshTokenClientID,
+		RefreshToken: suite.validRefreshToken,
+		Scope:        "reservations:view",
+	}, suite.oauthApp)
+
+	assert.Nil(suite.T(), response)
+	suite.Require().NotNil(err)
+	assert.Equal(suite.T(), constants.ErrorInvalidScope, err.Error)
 }

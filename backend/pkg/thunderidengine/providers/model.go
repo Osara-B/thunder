@@ -163,17 +163,21 @@ type Resource struct {
 
 // ResourceServer represents a resource server in both declarative resources and service layer.
 type ResourceServer struct {
-	ID                  string                    `yaml:"id"                    json:"-"`
-	Name                string                    `yaml:"name"                  json:"name"`
-	Description         string                    `yaml:"description,omitempty" json:"description,omitempty"`
-	Identifier          string                    `yaml:"identifier"            json:"identifier"`
-	Type                ResourceServerType        `yaml:"type,omitempty"        json:"type,omitempty"`
-	OUID                string                    `yaml:"ouId,omitempty"        json:"ouId"`
-	OUHandle            string                    `yaml:"ouHandle,omitempty"    json:"-"`
-	Delimiter           string                    `yaml:"delimiter,omitempty"   json:"delimiter,omitempty"   yamlfmt:"quoted"`
-	AuthorizationEngine AuthorizationEngineConfig `yaml:"authorizationEngine,omitempty" json:"authorizationEngine,omitempty"`
-	IsReadOnly          bool                      `yaml:"-"                     json:"-"`
-	Resources           []Resource                `yaml:"resources,omitempty"   json:"resources,omitempty"`
+	ID          string             `yaml:"id"                    json:"-"`
+	Name        string             `yaml:"name"                  json:"name"`
+	Description string             `yaml:"description,omitempty" json:"description,omitempty"`
+	Identifier  string             `yaml:"identifier"            json:"identifier"`
+	Type        ResourceServerType `yaml:"type,omitempty"        json:"type,omitempty"`
+	OUID        string             `yaml:"ouId,omitempty"        json:"ouId"`
+	OUHandle    string             `yaml:"ouHandle,omitempty"    json:"-"`
+	Delimiter   string             `yaml:"delimiter,omitempty"   json:"delimiter,omitempty"   yamlfmt:"quoted"`
+	// HierarchicalPermissions declares that this resource server's permission strings nest, so a
+	// granted permission authorizes the permissions beneath it. Off by default: what a scope string
+	// means belongs to the resource server, so the relation applies only where its owner asks for it.
+	HierarchicalPermissions bool                      `yaml:"hierarchicalPermissions,omitempty" json:"hierarchicalPermissions,omitempty"`
+	AuthorizationEngine     AuthorizationEngineConfig `yaml:"authorizationEngine,omitempty" json:"authorizationEngine,omitempty"`
+	IsReadOnly              bool                      `yaml:"-"                     json:"-"`
+	Resources               []Resource                `yaml:"resources,omitempty"   json:"resources,omitempty"`
 }
 
 // AuthorizationEngineTypeAuthZENPDP identifies the AuthZEN PDP authorization engine.
@@ -1108,6 +1112,12 @@ type ConsentPurposePrompt struct {
 	Essential []PromptElement `json:"essential"`
 	// Optional is the list of elements the user can opt in or out of
 	Optional []PromptElement `json:"optional"`
+	// Substituted names the optional permission elements that were granted in place of a broader
+	// permission the client asked for. They are one decision rather than individual choices: the
+	// client asked for the resource above them, so approving some and refusing others would grant
+	// an arbitrary part of a set the user never chose to assemble. Refusing them drops those
+	// permissions; it does not refuse the authorization.
+	Substituted []string `json:"substituted,omitempty"`
 }
 
 // AuthorizationDetailType is a registered RFC 9396 authorization details type.
@@ -1714,4 +1724,38 @@ type PublicKeyInfo struct {
 	Thumbprint          string
 	CertificateDER      []byte
 	CertificateChainDER [][]byte // leaf first, then intermediates; nil if not certificate-backed
+}
+
+// ContextKeyGrantedInstead names the evaluation context entry carrying the permissions a subject
+// holds beneath a permission that was refused.
+//
+// It accompanies a false decision and never changes it. The question "may this subject do X" is
+// answered no, because holding what sits under a resource is not holding the resource; this reports
+// what the subject may do under X instead. A caller that returns the decision itself, such as the
+// AuthZEN evaluation endpoint, ignores it. A caller that mints a scope set honours it, so a client
+// asking for a resource receives the part of it the subject holds.
+//
+// Only the RBAC engine produces it. An external policy decision point has no view of the permission
+// tree, so a resource server configured with one never sees this.
+const ContextKeyGrantedInstead = "granted_instead"
+
+// GrantedInstead reads the permissions an evaluation offered in place of a refused one.
+//
+// Both the in-process shape and the JSON-decoded shape are accepted, since the context crosses an
+// engine boundary that may or may not have been serialized on the way.
+func GrantedInstead(evaluationContext map[string]interface{}) []string {
+	switch substituted := evaluationContext[ContextKeyGrantedInstead].(type) {
+	case []string:
+		return substituted
+	case []interface{}:
+		permissions := make([]string, 0, len(substituted))
+		for _, entry := range substituted {
+			if permission, ok := entry.(string); ok && permission != "" {
+				permissions = append(permissions, permission)
+			}
+		}
+		return permissions
+	default:
+		return nil
+	}
 }

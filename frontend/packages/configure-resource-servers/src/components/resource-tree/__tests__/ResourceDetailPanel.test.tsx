@@ -173,6 +173,7 @@ describe('ResourceDetailPanel', () => {
           description: null,
           identifier: 'https://new-api.example.com',
           ouId: 'ou-1',
+          hierarchicalPermissions: false,
         },
       },
       expect.any(Object),

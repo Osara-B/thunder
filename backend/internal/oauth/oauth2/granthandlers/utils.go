@@ -12,6 +12,9 @@ import (
 	"github.com/thunder-id/thunderid/internal/oauth/oauth2/constants"
 	"github.com/thunder-id/thunderid/internal/oauth/oauth2/model"
 	"github.com/thunder-id/thunderid/internal/oauth/oauth2/revocation"
+	"github.com/thunder-id/thunderid/internal/oauth/oauth2/tokenservice"
+	oauth2utils "github.com/thunder-id/thunderid/internal/oauth/oauth2/utils"
+	"github.com/thunder-id/thunderid/internal/system/security"
 )
 
 // excludeRevokedScopes returns the OIDC scopes and the permission scopes not revoked since a grant was
@@ -73,4 +76,42 @@ func grantRevocationError(err error) *model.ErrorResponse {
 		Error:            constants.ErrorServerError,
 		ErrorDescription: "Token revocation status could not be verified",
 	}
+}
+
+// oidcScopeSet returns the subset of scopes that are OIDC scopes for this application, as a set for
+// repeated lookup.
+func oidcScopeSet(scopes []string, scopeClaims map[string][]string) map[string]struct{} {
+	oidcScopes, _ := oauth2utils.SeparateOIDCAndNonOIDCScopes(tokenservice.JoinScopes(scopes), scopeClaims)
+	set := make(map[string]struct{}, len(oidcScopes))
+	for _, scope := range oidcScopes {
+		set[scope] = struct{}{}
+	}
+	return set
+}
+
+// grantPermits reports whether the scopes a previously issued token was granted permit one being
+// requested against them now, on a resource server using the given delimiter.
+//
+// A permission scope is permitted when the grant holds it, or holds one of its ancestors, so a
+// client may ask for something beneath what it was granted rather than being refused for asking for
+// less than it holds. Narrowing never works upwards, since a grant of a descendant does not confer
+// the resource it sits under.
+//
+// An OIDC scope confers only itself. It is not a permission on any resource server, so it never
+// stands as an ancestor, even where an application's scope-to-claims mapping names one that looks
+// like a parent. An empty delimiter reduces the whole test to equality, which is what an unbound
+// grant gets.
+func grantPermits(requested string, granted []string, oidcGranted map[string]struct{}, delimiter string) bool {
+	for _, grant := range granted {
+		if grant == requested {
+			return true
+		}
+		if _, isOIDC := oidcGranted[grant]; isOIDC {
+			continue
+		}
+		if security.PermissionCovers(grant, requested, delimiter) {
+			return true
+		}
+	}
+	return false
 }

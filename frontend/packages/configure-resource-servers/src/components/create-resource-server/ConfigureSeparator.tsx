@@ -1,7 +1,19 @@
 // Copyright 2026 The ThunderID Authors
 // SPDX-License-Identifier: Apache-2.0
 
-import {Box, FormControl, FormHelperText, FormLabel, MenuItem, Select, Stack, Typography} from '@wso2/oxygen-ui';
+import {
+  Alert,
+  Box,
+  Checkbox,
+  FormControl,
+  FormControlLabel,
+  FormHelperText,
+  FormLabel,
+  MenuItem,
+  Select,
+  Stack,
+  Typography,
+} from '@wso2/oxygen-ui';
 import {useEffect, type JSX} from 'react';
 import {useTranslation} from 'react-i18next';
 import {DELIMITER_OPTIONS} from '../../config/resource-server-delimiters';
@@ -12,12 +24,16 @@ import {isValidPermissionDelimiter} from '../../utils/isValidPermissionDelimiter
 interface ConfigureSeparatorProps {
   delimiter: PermissionDelimiter;
   onDelimiterChange: (delimiter: PermissionDelimiter) => void;
+  hierarchicalPermissions: boolean;
+  onHierarchicalPermissionsChange: (enabled: boolean) => void;
   onReadyChange?: (isReady: boolean) => void;
 }
 
 export default function ConfigureSeparator({
   delimiter,
   onDelimiterChange,
+  hierarchicalPermissions,
+  onHierarchicalPermissionsChange,
   onReadyChange = undefined,
 }: ConfigureSeparatorProps): JSX.Element {
   const {t} = useTranslation();
@@ -96,6 +112,33 @@ export default function ConfigureSeparator({
           {permissionPreview}
         </Typography>
       </Box>
+
+      <FormControl>
+        <FormControlLabel
+          control={
+            <Checkbox
+              id="resource-server-hierarchical-permissions"
+              checked={hierarchicalPermissions}
+              onChange={(e) => onHierarchicalPermissionsChange(e.target.checked)}
+            />
+          }
+          label={t('resourceServers:create.separator.hierarchical.label', 'Permissions are hierarchical')}
+        />
+        <FormHelperText sx={{ml: 0}}>
+          {t(
+            'resourceServers:create.separator.hierarchical.hint',
+            'Granting a resource also grants the permissions beneath it. Leave this off if your API treats each permission as a separate value.',
+          )}
+        </FormHelperText>
+        {hierarchicalPermissions && (
+          <Alert severity="info" sx={{mt: 1.5}}>
+            {t(
+              'resourceServers:create.separator.hierarchical.notice',
+              'A grant covers permissions added beneath it later, so a resource added under one a role already grants is granted too.',
+            )}
+          </Alert>
+        )}
+      </FormControl>
     </Stack>
   );
 }

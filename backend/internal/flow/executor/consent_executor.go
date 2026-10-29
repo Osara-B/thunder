@@ -19,6 +19,7 @@ import (
 	"github.com/thunder-id/thunderid/internal/flow/core"
 	oauth2const "github.com/thunder-id/thunderid/internal/oauth/oauth2/constants"
 	"github.com/thunder-id/thunderid/internal/system/log"
+	"github.com/thunder-id/thunderid/internal/system/utils"
 )
 
 // consentExecutor handles consent collection during identity journeys.
@@ -142,10 +143,14 @@ func (e *consentExecutor) checkConsent(ctx *providers.NodeContext, execResp *pro
 	forceReprompt := ctx.RuntimeData[common.RuntimeKeyForceConsentReprompt] == "true"
 
 	// Resolve consent to determine if any required consents are missing and need to be prompted
+	// The authorization step resolved the bound resource server and left its delimiter here, so
+	// a permission the subject already approved can answer for the ones it carries.
 	promptData, svcErr := e.consentEnforcer.ResolveConsent(
 		ctx.Context, ouID, appID, appName, entityRef.EntityID,
 		essentialAttributes, optionalAttributes, authorizedPermissions,
-		availableAttributes, forceReprompt, core.BuildProviderMetadata(ctx).RuntimeMetadata)
+		availableAttributes, forceReprompt, core.BuildProviderMetadata(ctx).RuntimeMetadata,
+		ctx.RuntimeData[common.RuntimeKeyPermissionDelimiter],
+		utils.ParseStringArray(ctx.RuntimeData[common.RuntimeKeySubstitutedPermissions], " "))
 	if svcErr != nil {
 		if svcErr.Type == tidcommon.ClientErrorType {
 			logger.Debug(ctx.Context, "Client error while resolving user consent", log.Any("error", svcErr))
@@ -235,6 +240,7 @@ func (e *consentExecutor) handleConsentDecisions(ctx *providers.NodeContext, exe
 		logger.Debug(ctx.Context, "Consent prompt timed out. Completing without recording consent")
 		execResp.RuntimeData[common.RuntimeKeyConsentedAttributes] = ""
 		execResp.RuntimeData[common.RuntimeKeyConsentedPermissions] = ""
+		execResp.RuntimeData[common.RuntimeKeyRefusedPermissions] = ""
 		execResp.Status = providers.ExecComplete
 		return execResp, nil
 	}
@@ -306,6 +312,11 @@ func (e *consentExecutor) handleConsentDecisions(ctx *providers.NodeContext, exe
 	execResp.RuntimeData[common.RuntimeKeyConsentedAttributes] = strings.Join(consentedAttrs, " ")
 	consentedPerms := collectApprovedElementsByPurposeName(consentRecord, buildPermissionsPurposeName(appID))
 	execResp.RuntimeData[common.RuntimeKeyConsentedPermissions] = strings.Join(consentedPerms, " ")
+	// Carried alongside the approvals so the assertion can tell a permission the subject declined
+	// from one they were never asked about. An approval of the resource above it must not answer for
+	// a permission they explicitly refused.
+	refusedPerms := collectRefusedElementsByPurposeName(consentRecord, buildPermissionsPurposeName(appID))
+	execResp.RuntimeData[common.RuntimeKeyRefusedPermissions] = strings.Join(refusedPerms, " ")
 
 	logger.Debug(ctx.Context, "Consent recorded successfully", log.String("consentID", consentRecord.ID))
 	execResp.Status = providers.ExecComplete
@@ -393,6 +404,22 @@ func (e *consentExecutor) buildAugmentedAvailableAttributes(
 
 // collectApprovedElementsByPurposeName returns a list of element names that are approved by the user for a
 // given purpose name in the consent record.
+// collectRefusedElementsByPurposeName lists the elements of a purpose the subject declined.
+func collectRefusedElementsByPurposeName(c *providers.Consent, purposeName string) []string {
+	for _, p := range c.Purposes {
+		if p.Name == purposeName {
+			var out []string
+			for _, e := range p.Elements {
+				if !e.IsUserApproved && !slices.Contains(out, e.Name) {
+					out = append(out, e.Name)
+				}
+			}
+			return out
+		}
+	}
+	return []string{}
+}
+
 func collectApprovedElementsByPurposeName(c *providers.Consent, purposeName string) []string {
 	for _, p := range c.Purposes {
 		if p.Name == purposeName {

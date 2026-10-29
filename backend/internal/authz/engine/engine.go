@@ -70,6 +70,14 @@ type AccessEvaluationRequest struct {
 type AccessEvaluationResponse struct {
 	Decision bool
 	Context  map[string]interface{}
+	// GrantedInstead names the permissions the subject holds beneath a permission that was
+	// refused. It accompanies a false decision and never changes it: holding what sits under a
+	// resource is not holding the resource. Callers that mint a scope set use it; callers that
+	// return the decision itself ignore it.
+	//
+	// Only the RBAC engine sets it. An external policy decision point has no view of the
+	// permission tree.
+	GrantedInstead []string
 }
 
 // AccessEvaluationsRequest represents a batched fine-grained access evaluation request.

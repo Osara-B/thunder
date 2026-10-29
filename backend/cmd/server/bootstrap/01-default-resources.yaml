@@ -113,6 +113,14 @@ name: System
 description: System resource server
 identifier: https://localhost:8090/mcp
 ouHandle: default
+# The management API has always treated a system permission as covering what sits beneath it, so the
+# declaration states what the gate already does rather than changing it.
+hierarchicalPermissions: true
+# Pinned rather than inherited from resource.default_delimiter. The gate matches system permissions
+# with the default delimiter directly, so an operator changing that default would otherwise build
+# these permission strings on a separator the gate does not split on, and every parent-to-child
+# match in the management API would stop resolving.
+delimiter: ":"
 resources:
   - name: System
     handle: system

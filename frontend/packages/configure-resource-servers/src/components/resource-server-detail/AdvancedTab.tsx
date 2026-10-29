@@ -19,6 +19,8 @@ interface AdvancedTabProps {
   pdpConnectionId: string;
   /** Whether the edited identifier fails the MCP rule, which shows the field in an error state. */
   isIdentifierInvalid?: boolean;
+  hierarchicalPermissions: boolean;
+  onHierarchicalPermissionsChange: (value: boolean) => void;
   onIdentifierChange: (value: string) => void;
   onAuthorizationEngineChange: (value: AuthorizationEngine) => void;
   onPDPConnectionChange: (value: string) => void;
@@ -30,6 +32,8 @@ export default function AdvancedTab({
   authorizationEngine,
   pdpConnectionId,
   isIdentifierInvalid = false,
+  hierarchicalPermissions,
+  onHierarchicalPermissionsChange,
   onIdentifierChange,
   onAuthorizationEngineChange,
   onPDPConnectionChange,
@@ -46,8 +50,59 @@ export default function AdvancedTab({
     pdpConnectionId &&
     !(pdpConnections.data ?? []).some((connection) => connection.id === pdpConnectionId);
 
+  // Changing this re-reads every existing grant on this resource server rather than rewriting any
+  // of them, so it takes effect on roles that already grant a permission here.
+  const permissionMatchingHint = hierarchicalPermissions
+    ? t(
+        'resourceServers:edit.advanced.permissionMatching.hierarchicalHint',
+        'Granting a resource also grants every permission beneath it.',
+      )
+    : t('resourceServers:edit.advanced.permissionMatching.exactHint', 'Each permission is granted on its own.');
+
   return (
     <Stack spacing={3}>
+      <SettingsCard
+        title={t('resourceServers:edit.advanced.permissionMatching.title', 'Permissions')}
+        description={t(
+          'resourceServers:edit.advanced.permissionMatching.description',
+          'Permission settings for this resource server.',
+        )}
+      >
+        <Stack spacing={2}>
+          <FormControl fullWidth>
+            <FormLabel id="resource-server-permission-matching-label">
+              {t('resourceServers:edit.advanced.permissionMatching.label', 'Permission matching')}
+            </FormLabel>
+            <Select
+              id="resource-server-permission-matching"
+              labelId="resource-server-permission-matching-label"
+              value={hierarchicalPermissions ? 'hierarchical' : 'exact'}
+              onChange={(event) => onHierarchicalPermissionsChange(event.target.value === 'hierarchical')}
+              size="small"
+              disabled={resourceServer.isReadOnly}
+            >
+              <MenuItem value="exact">{t('resourceServers:edit.advanced.permissionMatching.exact', 'Exact')}</MenuItem>
+              <MenuItem value="hierarchical">
+                {t('resourceServers:edit.advanced.permissionMatching.hierarchical', 'Hierarchical')}
+              </MenuItem>
+            </Select>
+            <FormHelperText sx={{ml: 0}}>{permissionMatchingHint}</FormHelperText>
+          </FormControl>
+          <FormControl fullWidth>
+            <FormLabel htmlFor="resource-server-delimiter">
+              {t('resourceServers:edit.advanced.delimiter.label', 'Permission delimiter')}
+            </FormLabel>
+            <TextField
+              id="resource-server-delimiter"
+              value={resourceServer.delimiter ?? ''}
+              fullWidth
+              size="small"
+              disabled
+              slotProps={{input: {sx: {fontFamily: 'monospace'}}}}
+            />
+          </FormControl>
+        </Stack>
+      </SettingsCard>
       <SettingsCard
         title={t('resourceServers:edit.advanced.identifier.title', 'Configurations')}
         description={

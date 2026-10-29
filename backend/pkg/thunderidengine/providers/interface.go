@@ -188,10 +188,17 @@ type ConsentProvider interface {
 	// consents are active; otherwise returns ConsentPromptData describing which purposes /
 	// elements still need user consent. When forceReprompt is true, consent is re-prompted for
 	// all required claims regardless of existing active consent.
+	// permissionDelimiter is the delimiter the bound resource server's permissions nest on, so a
+	// permission the subject already approved can answer for the ones it carries. Empty compares
+	// permissions exactly, which is what a resource server whose permissions do not nest gets.
+	// substitutedPermissions are the permissions granted in place of a broader one the client
+	// asked for. They are prompted as one decision rather than individually, since the client
+	// asked for the resource above them and not for these.
 	ResolveConsent(ctx context.Context, ouID, appID, appName, userID string,
 		essentialAttributes, optionalAttributes, authorizedPermissions []string,
 		availableAttributes *AttributesResponse, forceReprompt bool,
-		runtimeMetadata map[string][]string) (
+		runtimeMetadata map[string][]string, permissionDelimiter string,
+		substitutedPermissions []string) (
 		*ConsentPromptData, *common.ServiceError)
 
 	// RecordConsent records the user's consent decisions and returns the persisted consent record.

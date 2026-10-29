@@ -26,4 +26,9 @@ type consentSessionPurpose struct {
 	Essential []string `json:"essential"`
 	// Optional holds the names of optional elements for this purpose
 	Optional []string `json:"optional"`
+	// Substituted holds the names of optional elements granted in place of a broader permission
+	// the client asked for. They are one decision: the client asked for the resource above them,
+	// so approving some and refusing others would grant an arbitrary part of a set the user never
+	// chose to assemble.
+	Substituted []string `json:"substituted,omitempty"`
 }

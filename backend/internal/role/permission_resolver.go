@@ -9,6 +9,7 @@ import (
 
 	"github.com/thunder-id/thunderid/internal/entity"
 	"github.com/thunder-id/thunderid/internal/group"
+	resourcepkg "github.com/thunder-id/thunderid/internal/resource"
 	"github.com/thunder-id/thunderid/internal/system/security"
 )
 
@@ -20,6 +21,7 @@ type EffectivePermissionResolver struct {
 	roleService   RoleServiceInterface
 	groupService  group.GroupServiceInterface
 	entityService entity.EntityServiceInterface
+	delimiters    *permissionDelimiterResolver
 }
 
 // NewEffectivePermissionResolver builds a resolver over the services it needs.
@@ -27,12 +29,25 @@ func NewEffectivePermissionResolver(
 	roleService RoleServiceInterface,
 	groupService group.GroupServiceInterface,
 	entityService entity.EntityServiceInterface,
+	resourceService resourcepkg.ResourceServiceInterface,
 ) *EffectivePermissionResolver {
 	return &EffectivePermissionResolver{
 		roleService:   roleService,
 		groupService:  groupService,
 		entityService: entityService,
+		delimiters:    newPermissionDelimiterResolver(resourceService),
 	}
+}
+
+// ResolveDelimiters returns the delimiter each named resource server's permissions nest on.
+//
+// A resource server that did not declare its permissions hierarchical is absent from the result, as
+// is one that cannot be read. Both are then matched exactly by the caller, which refuses a grant it
+// cannot justify rather than approving one.
+func (r *EffectivePermissionResolver) ResolveDelimiters(
+	ctx context.Context, resourceServerIDs []string,
+) map[string]string {
+	return r.delimiters.resolveAll(ctx, resourceServerIDs)
 }
 
 // ResolveForEntity returns every permission an entity holds, directly and through its groups.

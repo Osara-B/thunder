@@ -2318,6 +2318,9 @@ components:
         delimiter:
           type: string
           description: Character used to separate permission hierarchy levels (immutable after creation)
+        hierarchicalPermissions:
+          type: boolean
+          description: Whether a granted permission on this resource server also authorizes the permissions beneath it.
         authorizationEngine:
           $ref: '#/components/schemas/AuthorizationEngineConfig'
         isReadOnly:
@@ -2348,6 +2351,14 @@ components:
         delimiter:
           type: string
           description: Optional delimiter character for permission hierarchy (defaults to ":", immutable after creation)
+        hierarchicalPermissions:
+          type: boolean
+          default: false
+          description: >-
+            Whether a granted permission on this resource server also authorizes the permissions
+            beneath it, so granting a resource grants its actions and nested resources without those
+            being listed. Off by default, because what a permission string means belongs to the
+            resource server. A grant also covers permissions added beneath it later.
 
     UpdateResourceServerRequest:
       type: object
@@ -2366,6 +2377,15 @@ components:
           type: string
           format: uuid
           description: ID of the organization unit this resource server belongs to
+        hierarchicalPermissions:
+          type: boolean
+          default: false
+          description: >-
+            Whether a granted permission on this resource server also authorizes the permissions
+            beneath it. It can be turned on and off after creation and takes effect for evaluations
+            made after the change, so turning it off narrows what existing grants confer and
+            turning it on widens them. Omitting it turns it off. The delimiter itself stays
+            immutable.
         authorizationEngine:
           $ref: '#/components/schemas/AuthorizationEngineConfig'
 

@@ -634,7 +634,13 @@ func toAuthzAccessEvaluationRequest(
 }
 
 // buildDecisionContext returns the engine context or a default denial context.
+//
+// Permissions the subject holds beneath a refused one are dropped here. This endpoint answers
+// whether the subject may perform the action it was asked about, and the answer is no: holding what
+// sits under a resource is not holding the resource. Reporting the substitutes would answer a
+// question the caller did not ask, and would displace the denial reason it expects.
 func buildDecisionContext(decision bool, context map[string]interface{}) map[string]interface{} {
+	context = withoutGrantedInstead(context)
 	if context != nil {
 		return context
 	}
@@ -651,6 +657,24 @@ func buildSuspendedSubjectContext() map[string]interface{} {
 	return map[string]interface{}{
 		"reason": "Subject is suspended",
 	}
+}
+
+// withoutGrantedInstead returns the context without the substituted-permissions entry, and nil if
+// that was all it carried, so the caller falls back to the ordinary denial reason.
+func withoutGrantedInstead(context map[string]interface{}) map[string]interface{} {
+	if _, ok := context[providers.ContextKeyGrantedInstead]; !ok {
+		return context
+	}
+	remaining := make(map[string]interface{}, len(context)-1)
+	for key, value := range context {
+		if key != providers.ContextKeyGrantedInstead {
+			remaining[key] = value
+		}
+	}
+	if len(remaining) == 0 {
+		return nil
+	}
+	return remaining
 }
 
 // buildInvalidActionContext returns denial context for an action missing from the resource server.
